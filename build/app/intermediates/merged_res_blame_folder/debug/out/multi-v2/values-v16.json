@@ -1,16 +1,17 @@
 {
     "logs": [
         {
-            "outputFile": "com.example.fark_noi.app-mergeDebugResources-10:/values-v16/values-v16.xml",
+            "outputFile": "com.example.fark_noi.app-mergeDebugResources-40:/values-v16/values-v16.xml",
             "map": [
                 {
-                    "source": "/Users/admin/.gradle/caches/transforms-3/7e9df2ac2213a6bd3cef0f2f27870d79/transformed/core-1.6.0/res/values-v16/values-v16.xml",
+                    "source": "/Users/admin/.gradle/caches/transforms-3/e5f5f99fd1de3713735708209c2b75f8/transformed/appcompat-1.1.0/res/values-v16/values-v16.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",
                         "startOffsets": "55",
-                        "endColumns": "65",
-                        "endOffsets": "116"
+                        "endLines": "5",
+                        "endColumns": "12",
+                        "endOffsets": "223"
                     }
                 }
             ]
