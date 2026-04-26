@@ -11,7 +11,7 @@ class PostTripHeaderBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [AppColors.green, Color(0xFF2E9E61)],
+          colors: [Color(AppColors.primary), Color(AppColors.primary)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

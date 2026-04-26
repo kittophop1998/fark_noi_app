@@ -10,6 +10,11 @@ class HomeModel extends HomeEntity {
     required super.departureTime,
     required super.totalSlots,
     required super.filledSlots,
+    super.rating = 5.0,
+    super.reviewCount = 0,
+    super.eta = '',
+    super.tags = const [],
+    super.category = 'food',
   });
 
   factory HomeModel.fromJson(Map<String, dynamic> json) => HomeModel(
@@ -21,6 +26,11 @@ class HomeModel extends HomeEntity {
         departureTime: json['departure_time'] as String,
         totalSlots: json['total_slots'] as int,
         filledSlots: json['filled_slots'] as int,
+        rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
+        reviewCount: json['review_count'] as int? ?? 0,
+        eta: json['eta'] as String? ?? '',
+        tags: (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
+        category: json['category'] as String? ?? 'food',
       );
 
   Map<String, dynamic> toJson() => {
@@ -32,5 +42,10 @@ class HomeModel extends HomeEntity {
         'departure_time': departureTime,
         'total_slots': totalSlots,
         'filled_slots': filledSlots,
+        'rating': rating,
+        'review_count': reviewCount,
+        'eta': eta,
+        'tags': tags,
+        'category': category,
       };
 }

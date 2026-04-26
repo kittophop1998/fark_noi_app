@@ -36,16 +36,16 @@ class PostTripCategoryPicker extends StatelessWidget {
             padding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: isSelected ? AppColors.green : AppColors.card,
+              color: isSelected ? Color(AppColors.primary) : AppColors.surface,
               borderRadius: BorderRadius.circular(30),
               border: Border.all(
-                color: isSelected ? AppColors.green : AppColors.border,
+                color: isSelected ? Color(AppColors.primary) : AppColors.border,
                 width: isSelected ? 1.5 : 1,
               ),
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: AppColors.green.withOpacity(0.25),
+                        color: Color(AppColors.primary).withOpacity(0.25),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -57,7 +57,7 @@ class PostTripCategoryPicker extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : const Color(0xFF1C1B1F),
+                color: isSelected ? Colors.white : const Color(AppColors.textPrimary),
               ),
             ),
           ),

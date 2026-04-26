@@ -17,14 +17,14 @@ class PostTripPickupInput extends StatelessWidget {
             'เช่น "ผ่านหอทรงพิเชษฐ์ → จอดหน้าตึก SC" หรือ "นัดรับใต้ตึก C ได้เลย"',
         hintStyle: TextStyle(
             fontSize: 12,
-            color: const Color(0xFF49454F).withOpacity(0.6),
+            color: const Color(AppColors.textSecondary).withOpacity(0.6),
             height: 1.5),
         prefixIcon: const Padding(
           padding: EdgeInsets.only(bottom: 42),
-          child: Icon(Icons.alt_route_rounded, color: AppColors.green),
+          child: Icon(Icons.alt_route_rounded, color: Color(AppColors.primary)),
         ),
         filled: true,
-        fillColor: AppColors.card,
+        fillColor: AppColors.surface,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
@@ -38,7 +38,7 @@ class PostTripPickupInput extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-              const BorderSide(color: AppColors.green, width: 1.8),
+              const BorderSide(color: Color(AppColors.primary), width: 1.8),
         ),
       ),
     );

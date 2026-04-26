@@ -25,11 +25,11 @@ class PostTripDestinationInput extends StatelessWidget {
       decoration: InputDecoration(
         hintText: 'เช่น ฟิวเจอร์พาร์ค, Lotus\'s, ตลาดนัดอินเตอร์โซน',
         hintStyle: TextStyle(
-            fontSize: 13, color: const Color(0xFF49454F).withOpacity(0.6)),
+            fontSize: 13, color: const Color(AppColors.textSecondary).withOpacity(0.6)),
         prefixIcon:
-            const Icon(Icons.location_on_outlined, color: AppColors.green),
+            const Icon(Icons.location_on_outlined, color: Color(AppColors.primary)),
         filled: true,
-        fillColor: AppColors.card,
+        fillColor: AppColors.surface,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
@@ -42,7 +42,7 @@ class PostTripDestinationInput extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.green, width: 1.8),
+          borderSide: const BorderSide(color: Color(AppColors.primary), width: 1.8),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -77,16 +77,16 @@ class PostTripQuickSelectPlaces extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: AppColors.greenLight,
+                color: AppColors.primaryLight,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                    color: AppColors.green.withOpacity(0.3)),
+                    color: Color(AppColors.primary).withOpacity(0.3)),
               ),
               child: Text(
                 place,
                 style: const TextStyle(
                   fontSize: 12,
-                  color: AppColors.green,
+                  color: Color(AppColors.primary),
                   fontWeight: FontWeight.w600,
                 ),
               ),

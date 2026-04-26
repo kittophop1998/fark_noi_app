@@ -55,8 +55,8 @@ class _PostTripPageState extends State<PostTripPage> {
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
           colorScheme: Theme.of(ctx).colorScheme.copyWith(
-                primary: AppColors.green,
-                secondary: AppColors.green,
+                primary: Color(AppColors.primary),
+                secondary: Color(AppColors.primary),
               ),
         ),
         child: child!,
@@ -87,7 +87,7 @@ class _PostTripPageState extends State<PostTripPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('กรุณาเลือกเวลาขาไปและขากลับด้วยนะ 🕐'),
-          backgroundColor: AppColors.orange,
+          backgroundColor: AppColors.action,
         ),
       );
       return;
@@ -113,7 +113,7 @@ class _PostTripPageState extends State<PostTripPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('🎉 ประกาศรับหิ้วเรียบร้อยแล้ว!'),
-          backgroundColor: AppColors.green,
+          backgroundColor: Color(AppColors.primary),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -218,7 +218,7 @@ class _PostTripPageState extends State<PostTripPage> {
       systemOverlayStyle: SystemUiOverlayStyle.dark,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-        color: const Color(0xFF1C1B1F),
+        color: const Color(AppColors.textPrimary),
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: const Text(
@@ -226,7 +226,7 @@ class _PostTripPageState extends State<PostTripPage> {
         style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w800,
-          color: Color(0xFF1C1B1F),
+          color: Color(AppColors.textPrimary),
         ),
       ),
       centerTitle: false,

@@ -18,16 +18,16 @@ class PostTripFeeInput extends StatelessWidget {
         hintText: 'เช่น 10, 20 หรือตามตกลง',
         hintStyle: TextStyle(
             fontSize: 13,
-            color: const Color(0xFF49454F).withOpacity(0.6)),
+            color: const Color(AppColors.textSecondary).withOpacity(0.6)),
         prefixIcon:
-            const Icon(Icons.payments_outlined, color: AppColors.orange),
+            const Icon(Icons.payments_outlined, color: AppColors.action),
         suffixText: 'บาท/ออเดอร์',
         suffixStyle: const TextStyle(
             fontSize: 13,
-            color: Color(0xFF49454F),
+            color: Color(AppColors.textSecondary),
             fontWeight: FontWeight.w500),
         filled: true,
-        fillColor: AppColors.card,
+        fillColor: AppColors.surface,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
@@ -41,7 +41,7 @@ class PostTripFeeInput extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-              const BorderSide(color: AppColors.orange, width: 1.8),
+              const BorderSide(color: AppColors.action, width: 1.8),
         ),
       ),
       validator: (v) =>

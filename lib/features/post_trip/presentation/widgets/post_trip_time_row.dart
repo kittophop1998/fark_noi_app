@@ -25,8 +25,8 @@ class PostTripTimeRow extends StatelessWidget {
             label: '🛫 ออกจากที่นี่',
             subtitle: 'เวลาขาไป',
             time: departureTime,
-            color: AppColors.green,
-            bgColor: AppColors.greenLight,
+            color: Color(AppColors.primary),
+            bgColor: AppColors.primaryLight,
             onTap: onTapDeparture,
           ),
         ),
@@ -36,8 +36,8 @@ class PostTripTimeRow extends StatelessWidget {
             label: '🏠 ถึงจุดนัดรับ',
             subtitle: 'ETA ขากลับ',
             time: returnTime,
-            color: AppColors.orange,
-            bgColor: AppColors.orangeLight,
+            color: AppColors.action,
+            bgColor: AppColors.actionLight,
             onTap: onTapReturn,
           ),
         ),
@@ -73,7 +73,7 @@ class _TimeCard extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         decoration: BoxDecoration(
-          color: hasTime ? bgColor : AppColors.card,
+          color: hasTime ? bgColor : AppColors.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: hasTime ? color : AppColors.border,
@@ -87,7 +87,7 @@ class _TimeCard extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 11,
-                color: hasTime ? color : const Color(0xFF49454F),
+                color: hasTime ? color : const Color(AppColors.textSecondary),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -96,14 +96,14 @@ class _TimeCard extends StatelessWidget {
               children: [
                 Icon(Icons.access_time_rounded,
                     size: 18,
-                    color: hasTime ? color : const Color(0xFF49454F)),
+                    color: hasTime ? color : const Color(AppColors.textSecondary)),
                 const SizedBox(width: 6),
                 Text(
                   hasTime ? time!.format(context) : '-- : --',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: hasTime ? color : const Color(0xFF49454F),
+                    color: hasTime ? color : const Color(AppColors.textSecondary),
                   ),
                 ),
               ],
@@ -113,7 +113,7 @@ class _TimeCard extends StatelessWidget {
               subtitle,
               style: TextStyle(
                 fontSize: 10,
-                color: (hasTime ? color : const Color(0xFF49454F))
+                color: (hasTime ? color : const Color(AppColors.textSecondary))
                     .withOpacity(0.7),
               ),
             ),

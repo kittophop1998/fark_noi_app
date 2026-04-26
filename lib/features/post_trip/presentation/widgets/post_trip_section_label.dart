@@ -22,7 +22,7 @@ class PostTripSectionLabel extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: const BoxDecoration(
-            color: AppColors.green,
+            color: Color(AppColors.primary),
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
@@ -41,7 +41,7 @@ class PostTripSectionLabel extends StatelessWidget {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF1C1B1F),
+            color: Color(AppColors.textPrimary),
           ),
         ),
       ],

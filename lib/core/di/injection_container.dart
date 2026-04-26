@@ -1,6 +1,8 @@
 import 'package:get_it/get_it.dart';
 
 import '../network/dio_client.dart';
+import '../local_storage/hive_local_storage.dart';
+import '../local_storage/local_storage_service.dart';
 
 // ── Home ────────────────────────────────────────────────────────────────────
 import '../../features/home/data/datasources/home_mock_datasource.dart';
@@ -48,5 +50,8 @@ Future<void> init() async {
 
   // ─── Core ─────────────────────────────────────────────
   sl.registerLazySingleton(() => DioClient());
+
+  // ─── Local Storage ────────────────────────────────────
+  sl.registerLazySingleton<LocalStorageService>(() => HiveLocalStorage());
 }
 

@@ -17,7 +17,7 @@ class PostTripOrderCounter extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
@@ -32,14 +32,14 @@ class PostTripOrderCounter extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF1C1B1F),
+                    color: Color(AppColors.textPrimary),
                   ),
                 ),
                 SizedBox(height: 2),
                 Text(
                   'เพื่อไม่ให้ของหนักเกินไปตอนแบกกลับ',
                   style: TextStyle(
-                      fontSize: 11, color: Color(0xFF49454F)),
+                      fontSize: 11, color: Color(AppColors.textSecondary)),
                 ),
               ],
             ),
@@ -55,7 +55,7 @@ class PostTripOrderCounter extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
-                color: AppColors.green,
+                color: Color(AppColors.primary),
               ),
             ),
           ),
@@ -84,11 +84,11 @@ class _CounterButton extends StatelessWidget {
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: enabled ? AppColors.greenLight : AppColors.bgPage,
+          color: enabled ? AppColors.primaryLight : AppColors.bgPage,
           shape: BoxShape.circle,
           border: Border.all(
             color: enabled
-                ? AppColors.green.withOpacity(0.4)
+                ? Color(AppColors.primary).withOpacity(0.4)
                 : AppColors.border,
           ),
         ),
@@ -96,8 +96,8 @@ class _CounterButton extends StatelessWidget {
           icon,
           size: 18,
           color: enabled
-              ? AppColors.green
-              : const Color(0xFF49454F).withOpacity(0.4),
+              ? Color(AppColors.primary)
+              : const Color(AppColors.textSecondary).withOpacity(0.4),
         ),
       ),
     );

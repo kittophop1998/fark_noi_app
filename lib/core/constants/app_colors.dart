@@ -1,37 +1,30 @@
 import 'package:flutter/material.dart';
 
-// App Colors
+// App Colors — Minimal Palette (60-30-10 rule)
+//   60% → bgPage / surface / border  — neutral backgrounds & dividers
+//   30% → text colors                — hierarchy without extra hues
+//   10% → primary + action           — one accent + one urgent signal only
 class AppColors {
   AppColors._();
 
-  // Primary
-  static const primary = 0xFF6750A4;
-  static const primaryContainer = 0xFFEADDFF;
-  static const onPrimary = 0xFFFFFFFF;
+// 60% Neutral
+  static const Color bgPage  = Color(0xFFF2F5F7);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color border  = Color(0xFFE2E8ED);
 
-  // Secondary
-  static const secondary = 0xFF625B71;
-  static const secondaryContainer = 0xFFE8DEF8;
+  // 30% Text
+  static const int  textPrimary   = 0xFF102A43; // Dark Blue Grey
+  static const int  textSecondary = 0xFF486581; 
+  static const Color textDisabled = Color(0xFF9FB3C8);
 
-  // Error
-  static const error = 0xFFB3261E;
-  static const onError = 0xFFFFFFFF;
+  // 10% Accent
+  static const int   primary      = 0xFF243B53; // Charcoal Blue
+  static const Color primaryLight = Color(0xFFD9E2EC); 
 
-  // Background
-  static const background = 0xFFFFFBFE;
-  static const surface = 0xFFFFFBFE;
+  static const Color action      = Color(0xFF009688); // Teal (ดูสะอาดและเด่นพอดีๆ)
+  static const Color actionLight = Color(0xFFE0F2F1);
 
-  // Text
-  static const textPrimary = 0xFF1C1B1F;
-  static const textSecondary = 0xFF49454F;
-  static const textDisabled = 0xFF938F99;
-
-  // Feature Colors
-  static const Color green = Color(0xFF1E7B4B);
-  static const Color greenLight = Color(0xFFE8F5E9);
-  static const Color orange = Color(0xFFF57C00);
-  static const Color orangeLight = Color(0xFFFFF3E0);
-  static const Color bgPage = Color(0xFFF5F5F7);
-  static const Color card = Colors.white;
-  static const Color border = Color(0xFFE0E0E0);
+  // Error — Destructive actions, remove / cancel
+  static const Color error      = Color(0xFFD32F2F);
+  static const Color errorLight = Color(0xFFFFEBEE);
 }

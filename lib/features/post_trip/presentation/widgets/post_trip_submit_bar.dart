@@ -22,7 +22,7 @@ class PostTripSubmitBar extends StatelessWidget {
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: AppColors.surface,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
@@ -39,7 +39,7 @@ class PostTripSubmitBar extends StatelessWidget {
             gradient: LinearGradient(
               colors: isLoading
                   ? [Colors.grey.shade400, Colors.grey.shade400]
-                  : const [AppColors.green, Color(0xFF2E9E61)],
+                  : const [Color(AppColors.primary), Color(AppColors.primary)],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
             ),
@@ -48,7 +48,7 @@ class PostTripSubmitBar extends StatelessWidget {
                 ? []
                 : [
                     BoxShadow(
-                      color: AppColors.green.withOpacity(0.4),
+                      color: Color(AppColors.primary).withOpacity(0.4),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
