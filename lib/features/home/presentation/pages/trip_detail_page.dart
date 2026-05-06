@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../shared/models/prompt_pay_config.dart';
 import '../../domain/entities/home_entity.dart';
 
 // ─── Color shortcuts (all from AppColors) ────────────────────────────────────
@@ -38,13 +39,6 @@ class _MockOrder {
     this.actualPrice,
     this.status = _PaymentStatus.pending,
   });
-}
-
-// ─── Mock PromptPay Info ─────────────────────────────────
-class _PromptPayInfo {
-  static const phone = '098-765-4321';
-  static const accountName = 'สมชาย ใจดี';
-  static const deliveryFee = 20.0;
 }
 
 // ────────────────────────────────────────────────────────
@@ -1420,7 +1414,7 @@ class _OrderCard extends StatelessWidget {
                     ),
                     if (isWaiting || isPaid)
                       Text(
-                        'ยอด: ${(order.actualPrice! + _PromptPayInfo.deliveryFee).toStringAsFixed(0)} บ. · ส่งข้อมูล PromptPay แล้ว',
+                        'ยอด: ${(order.actualPrice! + PromptPayConfig.deliveryFee).toStringAsFixed(0)} บ. · ส่งข้อมูล PromptPay แล้ว',
                         style: TextStyle(
                           fontSize: 11,
                           color: _statusColor,
@@ -1583,7 +1577,7 @@ class _PaymentSummarySheetState extends State<_PaymentSummarySheet> {
 
   double get _actualPrice =>
       double.tryParse(_actualPriceController.text.trim()) ?? 0;
-  double get _total => _actualPrice + _PromptPayInfo.deliveryFee;
+  double get _total => _actualPrice + PromptPayConfig.deliveryFee;
 
   @override
   void dispose() {
@@ -1732,7 +1726,7 @@ class _PaymentSummarySheetState extends State<_PaymentSummarySheet> {
                     _PriceRow(
                       label: '+ ค่าหิ้ว',
                       value:
-                          '${_PromptPayInfo.deliveryFee.toStringAsFixed(0)} บาท',
+                          '${PromptPayConfig.deliveryFee.toStringAsFixed(0)} บาท',
                     ),
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8),
@@ -1819,14 +1813,14 @@ class _PaymentSummarySheetState extends State<_PaymentSummarySheet> {
                     _PromptPayRow(
                       icon: Icons.phone_rounded,
                       label: 'เบอร์โทรศัพท์',
-                      value: _PromptPayInfo.phone,
+                      value: PromptPayConfig.phone,
                       copyable: true,
                     ),
                     const SizedBox(height: 8),
                     _PromptPayRow(
                       icon: Icons.person_rounded,
                       label: 'ชื่อบัญชี',
-                      value: _PromptPayInfo.accountName,
+                      value: PromptPayConfig.accountName,
                     ),
                     const SizedBox(height: 12),
                     // Mock QR placeholder

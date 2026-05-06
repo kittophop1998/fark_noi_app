@@ -5,13 +5,16 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/di/injection_container.dart';
 import '../../../../core/router/app_router.dart';
-import '../../../my_trips/data/my_trips_mock_data.dart';
+import '../../../my_trips/domain/entities/my_trip_entity.dart';
+import '../../../my_trips/data/datasources/my_trips_mock_datasource.dart';
+import '../../../../shared/widgets/app_error_view.dart';
+import '../../../../shared/widgets/noti_badge.dart';
+import '../../../../shared/widgets/pulse_dot_widget.dart';
 import '../store/home_store.dart';
 import '../widgets/home_content.dart';
 
 // ── Palette shortcuts (10% rule: primary only on main CTA & active states)
 const _kPrimary = Color(AppColors.primary); // Blue Violet — FAB, active bubble
-const _kAction = AppColors.action; // Orange-Red — urgent noti badge
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -22,17 +25,25 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late final HomeStore _store;
+  MyTripEntity? _activeTrip;
 
   @override
   void initState() {
     super.initState();
     _store = sl<HomeStore>();
     _store.fetchHomeData();
+    _loadActiveTrip();
+  }
+
+  Future<void> _loadActiveTrip() async {
+    final trip = await MyTripsMockDataSource().getActiveTrip();
+    if (!mounted) return;
+    setState(() => _activeTrip = trip);
   }
 
   @override
   Widget build(BuildContext context) {
-    final activeTrip = MyTripsMockData.getActiveTrip();
+    final activeTrip = _activeTrip;
 
     return Scaffold(
       backgroundColor: AppColors.bgPage,
@@ -64,7 +75,7 @@ class _HomePageState extends State<HomePage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const _PulseDotGreen(),
+                    const PulseDotWidget(),
                     const SizedBox(width: 5),
                     Text(
                       'เปิดรับ ${activeTrip.filledSlots}/${activeTrip.totalSlots} คิว',
@@ -96,7 +107,7 @@ class _HomePageState extends State<HomePage> {
               Positioned(
                 right: 8,
                 top: 8,
-                child: _NotiBadge(count: 2),
+                child: NotiBadge(count: 2),
               ),
             ],
           ),
@@ -111,7 +122,7 @@ class _HomePageState extends State<HomePage> {
             );
           }
           if (_store.hasError) {
-            return _ErrorView(
+            return AppErrorView(
               message: _store.errorMessage!,
               onRetry: _store.fetchHomeData,
             );
@@ -149,115 +160,3 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-/// Pulsing green dot for the active trip bubble
-class _PulseDotGreen extends StatefulWidget {
-  const _PulseDotGreen();
-
-  @override
-  State<_PulseDotGreen> createState() => _PulseDotGreenState();
-}
-
-class _PulseDotGreenState extends State<_PulseDotGreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl =
-        AnimationController(vsync: this, duration: const Duration(seconds: 1))
-          ..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween(begin: 0.4, end: 1.0).animate(_ctrl),
-      child: Container(
-        width: 7,
-        height: 7,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorView({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: onRetry,
-              child: const Text('ลองอีกครั้ง'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Red dot / count badge for the notification bell icon.
-/// Pass [count] = 0 to hide, 1 = red dot only, >1 = number badge.
-class _NotiBadge extends StatelessWidget {
-  final int count;
-  const _NotiBadge({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    if (count <= 0) return const SizedBox.shrink();
-
-    final showNumber = count > 1;
-    return Container(
-      width: showNumber ? null : 9,
-      height: showNumber ? null : 9,
-      padding: showNumber
-          ? const EdgeInsets.symmetric(horizontal: 5, vertical: 1)
-          : null,
-      decoration: BoxDecoration(
-        color: _kAction,
-        shape: showNumber ? BoxShape.rectangle : BoxShape.circle,
-        borderRadius: showNumber ? BorderRadius.circular(8) : null,
-        border: Border.all(color: Colors.white, width: 1.5),
-      ),
-      child: showNumber
-          ? Text(
-              count > 99 ? '99+' : '$count',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                height: 1.2,
-              ),
-            )
-          : null,
-    );
-  }
-}

@@ -19,6 +19,13 @@ import '../../features/post_trip/domain/repositories/post_trip_repository.dart';
 import '../../features/post_trip/domain/usecases/create_post_trip_usecase.dart';
 import '../../features/post_trip/presentation/store/post_trip_store.dart';
 
+// ── My Trips ────────────────────────────────────────────────────────────────
+import '../../features/my_trips/data/datasources/my_trips_datasource.dart';
+import '../../features/my_trips/data/datasources/my_trips_mock_datasource.dart';
+import '../../features/my_trips/data/repositories/my_trips_repository_impl.dart';
+import '../../features/my_trips/domain/repositories/my_trips_repository.dart';
+import '../../features/my_trips/domain/usecases/get_my_trips_usecase.dart';
+
 final sl = GetIt.instance;
 
 Future<void> init() async {
@@ -29,6 +36,8 @@ Future<void> init() async {
   // ─── Use Cases ────────────────────────────────────────
   sl.registerLazySingleton(() => GetHomeDataUseCase(sl()));
   sl.registerLazySingleton(() => CreatePostTripUseCase(sl()));
+  sl.registerLazySingleton(() => GetActiveTripUseCase(sl()));
+  sl.registerLazySingleton(() => GetCompletedTripsUseCase(sl()));
 
   // ─── Repositories ─────────────────────────────────────
   sl.registerLazySingleton<HomeRepository>(
@@ -36,6 +45,9 @@ Future<void> init() async {
   );
   sl.registerLazySingleton<PostTripRepository>(
     () => PostTripRepositoryImpl(dataSource: sl()),
+  );
+  sl.registerLazySingleton<MyTripsRepository>(
+    () => MyTripsRepositoryImpl(dataSource: sl()),
   );
 
   // ─── Data Sources ─────────────────────────────────────
@@ -47,6 +59,10 @@ Future<void> init() async {
   sl.registerLazySingleton<PostTripDataSource>(
     () => PostTripMockDataSource(),
   );
+  // TODO: เปลี่ยนเป็น MyTripsRemoteDataSource เมื่อพร้อม connect backend
+  sl.registerLazySingleton<MyTripsDataSource>(
+    () => MyTripsMockDataSource(),
+  );
 
   // ─── Core ─────────────────────────────────────────────
   sl.registerLazySingleton(() => DioClient());
@@ -54,4 +70,3 @@ Future<void> init() async {
   // ─── Local Storage ────────────────────────────────────
   sl.registerLazySingleton<LocalStorageService>(() => HiveLocalStorage());
 }
-

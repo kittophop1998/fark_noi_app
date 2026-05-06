@@ -3,8 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/router/app_router.dart';
-import '../../../my_trips/models/my_trip_models.dart';
-import '../../../my_trips/data/my_trips_mock_data.dart';
+import '../../../my_trips/domain/entities/my_trip_entity.dart';
+import '../../../my_trips/data/datasources/my_trips_mock_datasource.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
 const _kPrimary       = Color(AppColors.primary);
@@ -16,13 +16,38 @@ const _kTextPrimary   = Color(AppColors.textPrimary);
 const _kTextSecondary = Color(AppColors.textSecondary);
 const _kBorder        = AppColors.border;
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
   @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  MyTripEntity? _activeTrip;
+  List<MyTripEntity> _completed = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final ds = MyTripsMockDataSource();
+    final active = await ds.getActiveTrip();
+    final completed = await ds.getCompletedTrips();
+    if (!mounted) return;
+    setState(() {
+      _activeTrip = active;
+      _completed = completed;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final activeTrip = MyTripsMockData.getActiveTrip();
-    final completed = MyTripsMockData.getCompletedTrips();
+    final activeTrip = _activeTrip;
+    final completed = _completed;
 
     return Scaffold(
       backgroundColor: _kBg,

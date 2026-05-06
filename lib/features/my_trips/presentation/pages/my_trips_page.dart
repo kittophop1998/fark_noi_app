@@ -3,9 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../models/my_trip_models.dart';
-import '../../data/my_trips_mock_data.dart';
+import '../../domain/entities/my_trip_entity.dart';
+import '../../data/datasources/my_trips_mock_datasource.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../shared/models/prompt_pay_config.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
 const _kPrimary       = Color(AppColors.primary);
@@ -19,13 +20,6 @@ const _kTextPrimary   = Color(AppColors.textPrimary);
 const _kTextSecondary = Color(AppColors.textSecondary);
 const _kBorder        = AppColors.border;
 
-// ─── Mock PromptPay Info ─────────────────────────────────
-class _PromptPayInfo {
-  static const phone = '098-765-4321';
-  static const accountName = 'สมชาย ใจดี';
-  static const deliveryFee = 20.0;
-}
-
 // ─── Entry Point ────────────────────────────────────────
 
 class MyTripsPage extends StatefulWidget {
@@ -37,7 +31,7 @@ class MyTripsPage extends StatefulWidget {
 
 class _MyTripsPageState extends State<MyTripsPage>
     with SingleTickerProviderStateMixin {
-  late MyTrip? _trip;
+  late MyTripEntity? _trip;
   late AnimationController _badgeAnim;
 
   // local state for finalPrice editing
@@ -46,19 +40,26 @@ class _MyTripsPageState extends State<MyTripsPage>
   @override
   void initState() {
     super.initState();
-    _trip = MyTripsMockData.getActiveTrip();
     _badgeAnim = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _loadTrip();
+  }
 
-    if (_trip != null) {
-      for (final o in _trip!.orders) {
-        _priceControllers[o.id] = TextEditingController(
-          text: o.finalPrice != null ? o.finalPrice!.toStringAsFixed(0) : '',
-        );
+  Future<void> _loadTrip() async {
+    final trip = await MyTripsMockDataSource().getActiveTrip();
+    if (!mounted) return;
+    setState(() {
+      _trip = trip;
+      if (_trip != null) {
+        for (final o in _trip!.orders) {
+          _priceControllers[o.id] = TextEditingController(
+            text: o.finalPrice != null ? o.finalPrice!.toStringAsFixed(0) : '',
+          );
+        }
       }
-    }
+    });
   }
 
   @override
@@ -82,7 +83,7 @@ class _MyTripsPageState extends State<MyTripsPage>
         confirmLabel: 'ปิดรับฝาก',
         confirmColor: _kAction,
         onConfirm: () {
-          setState(() => _trip!.status = TripStatus.shopping);
+          setState(() => _trip = _trip!.copyWith(status: TripStatus.shopping));
         },
       ),
     );
@@ -91,8 +92,10 @@ class _MyTripsPageState extends State<MyTripsPage>
   void _markArrived() {
     if (_trip == null) return;
     setState(() {
-      _trip!.status = TripStatus.delivering;
-      _trip!.arrivedAt = DateTime.now();
+      _trip = _trip!.copyWith(
+        status: TripStatus.delivering,
+        arrivedAt: DateTime.now(),
+      );
     });
     ScaffoldMessenger.of(context).showSnackBar(
       _greenSnack(
@@ -155,7 +158,7 @@ class _MyTripsPageState extends State<MyTripsPage>
       builder: (_) => _CompleteDialog(
         isHighSpeed: isHighSpeed,
         onConfirm: () {
-          setState(() => _trip!.status = TripStatus.completed);
+          setState(() => _trip = _trip!.copyWith(status: TripStatus.completed));
         },
       ),
     );
@@ -193,7 +196,7 @@ class _MyTripsPageState extends State<MyTripsPage>
     );
   }
 
-  AppBar _buildAppBar(MyTrip trip) {
+  AppBar _buildAppBar(MyTripEntity trip) {
     return AppBar(
       backgroundColor: _kBg,
       elevation: 0,
@@ -240,7 +243,7 @@ class _MyTripsPageState extends State<MyTripsPage>
     }
   }
 
-  Widget _buildBody(MyTrip trip) {
+  Widget _buildBody(MyTripEntity trip) {
     final isDelivering = trip.status == TripStatus.delivering;
 
     return Column(
@@ -386,7 +389,7 @@ class _NoTripView extends StatelessWidget {
 // ─── Trip Overview Card ──────────────────────────────────
 
 class _TripOverviewCard extends StatelessWidget {
-  final MyTrip trip;
+  final MyTripEntity trip;
   final VoidCallback onClose;
 
   const _TripOverviewCard({required this.trip, required this.onClose});
@@ -580,7 +583,7 @@ class _SlotDots extends StatelessWidget {
 // ─── Checklist Progress ──────────────────────────────────
 
 class _ChecklistProgress extends StatelessWidget {
-  final MyTrip trip;
+  final MyTripEntity trip;
   const _ChecklistProgress({required this.trip});
 
   @override
@@ -991,7 +994,7 @@ class _DeliveryOrderCard extends StatelessWidget {
 // ─── QR Section ──────────────────────────────────────────
 
 class _QRSection extends StatelessWidget {
-  final MyTrip trip;
+  final MyTripEntity trip;
   const _QRSection({required this.trip});
 
   @override
@@ -1173,7 +1176,7 @@ class _QRMockPainter extends CustomPainter {
 // ─── Bottom Action Bar ───────────────────────────────────
 
 class _BottomActionBar extends StatelessWidget {
-  final MyTrip trip;
+  final MyTripEntity trip;
   final VoidCallback onMarkArrived;
   final VoidCallback onComplete;
 
@@ -1298,7 +1301,7 @@ class _SummarySheet extends StatefulWidget {
 class _SummarySheetState extends State<_SummarySheet> {
   double get _actualPrice =>
       double.tryParse(widget.controller.text.trim()) ?? 0;
-  double get _total => _actualPrice + _PromptPayInfo.deliveryFee;
+  double get _total => _actualPrice + PromptPayConfig.deliveryFee;
 
   @override
   Widget build(BuildContext context) {
@@ -1441,7 +1444,7 @@ class _SummarySheetState extends State<_SummarySheet> {
                     _PriceRow(
                       label: '+ ค่าหิ้ว',
                       value:
-                          '${_PromptPayInfo.deliveryFee.toStringAsFixed(0)} บาท',
+                          '${PromptPayConfig.deliveryFee.toStringAsFixed(0)} บาท',
                     ),
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8),
@@ -1528,14 +1531,14 @@ class _SummarySheetState extends State<_SummarySheet> {
                     _PromptPayRow(
                       icon: Icons.phone_rounded,
                       label: 'เบอร์โทรศัพท์',
-                      value: _PromptPayInfo.phone,
+                      value: PromptPayConfig.phone,
                       copyable: true,
                     ),
                     const SizedBox(height: 8),
                     _PromptPayRow(
                       icon: Icons.person_rounded,
                       label: 'ชื่อบัญชี',
-                      value: _PromptPayInfo.accountName,
+                      value: PromptPayConfig.accountName,
                     ),
                     const SizedBox(height: 12),
                     // Mock QR placeholder
@@ -1793,7 +1796,7 @@ class _CompleteDialog extends StatelessWidget {
 // ─── Completed View ──────────────────────────────────────
 
 class _CompletedView extends StatelessWidget {
-  final MyTrip trip;
+  final MyTripEntity trip;
   const _CompletedView({required this.trip});
 
   @override
