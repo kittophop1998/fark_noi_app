@@ -1,1 +1,0 @@
- /Users/admin/Desktop/project_myseft/fark_noi/.dart_tool/flutter_build/59c6448d929da6aead73202f40594db0/native_assets.yaml: 
