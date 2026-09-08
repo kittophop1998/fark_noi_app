@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 
-import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/di/injection_container.dart';
+import '../../../../../core/theme/app_colors.dart';
+import '../../../../../core/theme/app_shape.dart';
+import '../../../../../core/theme/app_typography.dart';
+import '../../../../../shared/widgets/app_badge.dart';
+import '../../../../../shared/widgets/app_button.dart';
+import '../../../../../shared/widgets/app_notice.dart';
+import '../../../../../shared/widgets/app_page.dart';
+import '../../../../../shared/widgets/app_page_header.dart';
+import '../../../../../shared/widgets/app_section.dart';
 import '../store/post_trip_store.dart';
 import '../widgets/post_trip_category_picker.dart';
 import '../widgets/post_trip_destination_input.dart';
 import '../widgets/post_trip_fee_input.dart';
-import '../widgets/post_trip_header_banner.dart';
 import '../widgets/post_trip_order_counter.dart';
 import '../widgets/post_trip_pickup_input.dart';
-import '../widgets/post_trip_section_label.dart';
-import '../widgets/post_trip_submit_bar.dart';
 import '../widgets/post_trip_time_row.dart';
 
+/// Opening a trip: telling the neighbourhood you are already going that way.
+///
+/// A form, so the header is `neutral` — **lower the decoration as the stakes
+/// rise**, and this screen is where somebody commits to carrying other people's
+/// shopping. The one filled coral action is the submit in the sticky footer,
+/// and nothing above it competes.
 class PostTripPage extends StatefulWidget {
   const PostTripPage({super.key});
 
@@ -30,6 +40,11 @@ class _PostTripPageState extends State<PostTripPage> {
   final _pickupCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  /// Set when the user submits with no times chosen. The time fields are not
+  /// `TextFormField`s, so the form's own validator cannot reach them — and a
+  /// snack bar alone would say the sentence somewhere the eye is not.
+  bool _timeMissing = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,23 +59,12 @@ class _PostTripPageState extends State<PostTripPage> {
     super.dispose();
   }
 
-  // ─── Pick Time ────────────────────────────────────────
-
   Future<void> _pickTime(bool isDeparture) async {
     final picked = await showTimePicker(
       context: context,
       initialTime: isDeparture
           ? (_store.departureTime ?? TimeOfDay.now())
           : (_store.returnTime ?? TimeOfDay.now()),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: Theme.of(ctx).colorScheme.copyWith(
-                primary: Color(AppColors.primary),
-                secondary: Color(AppColors.primary),
-              ),
-        ),
-        child: child!,
-      ),
     );
     if (picked == null) return;
     if (isDeparture) {
@@ -68,30 +72,23 @@ class _PostTripPageState extends State<PostTripPage> {
     } else {
       _store.setReturnTime(picked);
     }
+    if (_store.isTimeValid && _timeMissing) {
+      setState(() => _timeMissing = false);
+    }
   }
-
-  // ─── Select Place ─────────────────────────────────────
 
   void _selectPlace(String place) {
-    // strip leading emoji (2 chars + space)
-    final clean = place.length > 2 ? place.substring(2) : place;
-    _destinationCtrl.text = clean;
-    _store.setDestination(clean);
+    _destinationCtrl.text = place;
+    _store.setDestination(place);
   }
 
-  // ─── Submit ───────────────────────────────────────────
-
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final fieldsValid = _formKey.currentState!.validate();
     if (!_store.isTimeValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('กรุณาเลือกเวลาขาไปและขากลับด้วยนะ 🕐'),
-          backgroundColor: AppColors.action,
-        ),
-      );
+      setState(() => _timeMissing = true);
       return;
     }
+    if (!fieldsValid) return;
 
     _store
       ..setDestination(_destinationCtrl.text)
@@ -99,137 +96,139 @@ class _PostTripPageState extends State<PostTripPage> {
       ..setPickupPoint(_pickupCtrl.text);
 
     await _store.submit();
-
     if (!mounted) return;
 
+    final messenger = ScaffoldMessenger.of(context);
     if (_store.hasError) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
-          content: Text('เกิดข้อผิดพลาด: ${_store.errorMessage}'),
-          backgroundColor: Colors.red,
+          content: Text('เปิดทริปไม่สำเร็จ: ${_store.errorMessage}'),
+          backgroundColor: AppColors.errorFill,
         ),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('🎉 ประกาศรับหิ้วเรียบร้อยแล้ว!'),
-          backgroundColor: Color(AppColors.primary),
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
-      Navigator.of(context).pop();
+      return;
     }
-  }
 
-  // ─── Build ────────────────────────────────────────────
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('เปิดทริปเรียบร้อย รอคนมาฝากซื้อได้เลย'),
+        backgroundColor: AppColors.successFill,
+      ),
+    );
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bgPage,
-      appBar: _buildAppBar(),
-      body: Form(
+    return AppPage(
+      title: 'เปิดทริปใหม่',
+      tone: PageHeaderTone.neutral,
+      showBell: false,
+      showBack: true,
+      onBack: () => Navigator.of(context).pop(),
+      footer: Observer(
+        builder: (_) => AppButton(
+          label: 'เปิดทริป',
+          size: AppButtonSize.large,
+          fullWidth: true,
+          loading: _store.isSubmitting,
+          onPressed: _submit,
+        ),
+      ),
+      child: Form(
         key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+        child: AppPageContent(
           children: [
-            // ── Header Banner ──────────────────────────────────────────
-            const PostTripHeaderBanner(),
-            const SizedBox(height: 20),
-
-            // ── Step 1: Where ──────────────────────────────────────────
-            const PostTripSectionLabel(
-                step: '1', label: 'วันนี้คุณจะไปไหน?', icon: '📍'),
-            const SizedBox(height: 12),
-            PostTripDestinationInput(controller: _destinationCtrl),
-            const SizedBox(height: 12),
-            PostTripQuickSelectPlaces(onSelect: _selectPlace),
-            const SizedBox(height: 16),
-
-            // ── Step 2: When ───────────────────────────────────────────
-            Observer(
-              builder: (_) => PostTripTimeRow(
-                departureTime: _store.departureTime,
-                returnTime: _store.returnTime,
-                onTapDeparture: () => _pickTime(true),
-                onTapReturn: () => _pickTime(false),
+            AppSection(
+              title: 'จะไปไหน',
+              subtitle: 'ร้านหรือย่านที่คุณกำลังจะไป',
+              child: Column(
+                children: [
+                  PostTripDestinationInput(controller: _destinationCtrl),
+                  const SizedBox(height: AppSpace.x3),
+                  Observer(
+                    builder: (_) => PostTripQuickSelectPlaces(
+                      selected: _store.destination,
+                      onSelect: _selectPlace,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpace.sectionGap),
 
-            // ── Step 3: How many ───────────────────────────────────────
-            const PostTripSectionLabel(
-                step: '2', label: 'รับได้กี่เจ้า?', icon: '📦'),
-            const SizedBox(height: 12),
-            Observer(
-              builder: (_) => PostTripOrderCounter(
-                value: _store.maxOrders,
-                onChanged: _store.setMaxOrders,
+            AppSection(
+              title: 'ไปกี่โมง กลับกี่โมง',
+              subtitle: 'ผู้ฝากใช้เวลานี้ตัดสินใจว่าจะทันไหม',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Observer(
+                    builder: (_) => PostTripTimeRow(
+                      departureTime: _store.departureTime,
+                      returnTime: _store.returnTime,
+                      onTapDeparture: () => _pickTime(true),
+                      onTapReturn: () => _pickTime(false),
+                    ),
+                  ),
+                  if (_timeMissing) ...[
+                    const SizedBox(height: AppSpace.x3),
+                    const AppNotice(
+                      tone: AppTone.error,
+                      message: 'เลือกเวลาขาไปและเวลาถึงจุดนัดรับก่อนเปิดทริป',
+                    ),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpace.sectionGap),
 
-            // ── Step 4: Fee ────────────────────────────────────────────
-            const PostTripSectionLabel(
-                step: '3', label: 'ค่าหิ้วกี่บาท?', icon: '💰'),
-            const SizedBox(height: 12),
-            PostTripFeeInput(controller: _feeCtrl),
-            const SizedBox(height: 24),
-
-            // ── Step 5: Categories ─────────────────────────────────────
-            const PostTripSectionLabel(
-                step: '4',
-                label: 'รับหิ้วของประเภทไหนบ้าง?',
-                icon: '🏷️'),
-            const SizedBox(height: 12),
-            Observer(
-              builder: (_) => PostTripCategoryPicker(
-                selected: _store.selectedCategories,
-                onToggle: _store.toggleCategory,
+            AppSection(
+              title: 'รับได้กี่รายการ',
+              child: Observer(
+                builder: (_) => PostTripOrderCounter(
+                  value: _store.maxOrders,
+                  onChanged: _store.setMaxOrders,
+                ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpace.sectionGap),
 
-            // ── Step 6: Pickup point ───────────────────────────────────
-            const PostTripSectionLabel(
-                step: '5',
-                label: 'จุดนัดรับ / เส้นทางขากลับ',
-                icon: '🗺️'),
-            const SizedBox(height: 12),
-            PostTripPickupInput(controller: _pickupCtrl),
+            AppSection(
+              title: 'ค่าหิ้ว',
+              child: PostTripFeeInput(controller: _feeCtrl),
+            ),
+            const SizedBox(height: AppSpace.sectionGap),
+
+            AppSection(
+              title: 'รับหิ้วของแบบไหน',
+              subtitle: 'เลือกได้มากกว่าหนึ่งอย่าง',
+              child: Observer(
+                builder: (_) => PostTripCategoryPicker(
+                  selected: _store.selectedCategories,
+                  onToggle: _store.toggleCategory,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpace.sectionGap),
+
+            AppSection(
+              title: 'จุดนัดรับ',
+              subtitle: 'เส้นทางขากลับ และตรงไหนที่คุณจอดรับได้',
+              child: PostTripPickupInput(controller: _pickupCtrl),
+            ),
+            const SizedBox(height: AppSpace.x6),
+
+            // The last word before the committing action: what opening a trip
+            // actually promises somebody else.
+            Text(
+              'เมื่อเปิดทริปแล้ว ผู้ฝากจะเห็นทริปของคุณและส่งรายการมาให้ '
+              'คุณเลือกรับหรือปฏิเสธได้ทีละรายการ',
+              style: AppText.caption.copyWith(color: AppColors.faint),
+            ),
           ],
         ),
       ),
-      bottomNavigationBar: Observer(
-        builder: (_) => PostTripSubmitBar(
-          onTap: _submit,
-          isLoading: _store.isSubmitting,
-        ),
-      ),
-    );
-  }
-
-  AppBar _buildAppBar() {
-    return AppBar(
-      backgroundColor: AppColors.bgPage,
-      elevation: 0,
-      systemOverlayStyle: SystemUiOverlayStyle.dark,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-        color: const Color(AppColors.textPrimary),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      title: const Text(
-        'ประกาศรับหิ้ว 🛵',
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w800,
-          color: Color(AppColors.textPrimary),
-        ),
-      ),
-      centerTitle: false,
     );
   }
 }

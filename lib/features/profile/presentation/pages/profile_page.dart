@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../my_trips/domain/entities/my_trip_entity.dart';
 import '../../../my_trips/data/datasources/my_trips_mock_datasource.dart';

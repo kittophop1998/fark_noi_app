@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../domain/entities/my_trip_entity.dart';
 import '../../data/datasources/my_trips_mock_datasource.dart';
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/prompt_pay_config.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────

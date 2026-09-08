@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/theme/app_colors.dart';
+import '../../../../../core/theme/app_shape.dart';
+import '../../../../../core/theme/app_typography.dart';
+import '../../../../../shared/widgets/route_line.dart';
 
+/// When the trip leaves, and when it gets back.
+///
+/// **The journey is drawn, not listed.** These are the two ends of the same
+/// line, so they are the same picture the trip card and the order timeline
+/// draw: a hollow green mark where the runner sets off, a coral one where the
+/// errand lands. The connector stays neutral — a route drawn *inside* a form is
+/// context, and its job is to say the two rows belong together.
 class PostTripTimeRow extends StatelessWidget {
   const PostTripTimeRow({
     super.key,
@@ -18,107 +28,83 @@ class PostTripTimeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _TimeCard(
-            label: '🛫 ออกจากที่นี่',
-            subtitle: 'เวลาขาไป',
-            time: departureTime,
-            color: Color(AppColors.primary),
-            bgColor: AppColors.primaryLight,
-            onTap: onTapDeparture,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _TimeCard(
-            label: '🏠 ถึงจุดนัดรับ',
-            subtitle: 'ETA ขากลับ',
-            time: returnTime,
-            color: AppColors.action,
-            bgColor: AppColors.actionLight,
-            onTap: onTapReturn,
-          ),
-        ),
-      ],
+    return RouteLine(
+      roomy: true,
+      origin: _TimeField(
+        label: 'ออกจากที่นี่',
+        time: departureTime,
+        onTap: onTapDeparture,
+      ),
+      destination: _TimeField(
+        label: 'ถึงจุดนัดรับ',
+        time: returnTime,
+        onTap: onTapReturn,
+      ),
     );
   }
 }
 
-class _TimeCard extends StatelessWidget {
-  const _TimeCard({
+/// A field that opens a picker rather than a keyboard, in the same 52px shell
+/// every other control on the form wears.
+class _TimeField extends StatelessWidget {
+  const _TimeField({
     required this.label,
-    required this.subtitle,
     required this.time,
-    required this.color,
-    required this.bgColor,
     required this.onTap,
   });
 
   final String label;
-  final String subtitle;
   final TimeOfDay? time;
-  final Color color;
-  final Color bgColor;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final hasTime = time != null;
+    final chosen = time != null;
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: hasTime ? bgColor : AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: hasTime ? color : AppColors.border,
-            width: hasTime ? 1.5 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: hasTime ? color : const Color(AppColors.textSecondary),
-                fontWeight: FontWeight.w600,
-              ),
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: AppText.label.copyWith(color: AppColors.text)),
+          const SizedBox(height: AppSpace.x2),
+          Container(
+            height: AppMetrics.fieldHeight,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.x4),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: AppRadius.brMd,
+              border: Border.all(color: AppColors.border),
             ),
-            const SizedBox(height: 6),
-            Row(
+            child: Row(
               children: [
-                Icon(Icons.access_time_rounded,
-                    size: 18,
-                    color: hasTime ? color : const Color(AppColors.textSecondary)),
-                const SizedBox(width: 6),
-                Text(
-                  hasTime ? time!.format(context) : '-- : --',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: hasTime ? color : const Color(AppColors.textSecondary),
+                Icon(
+                  Icons.schedule_rounded,
+                  size: AppMetrics.icon,
+                  color: chosen ? AppColors.primary : AppColors.faint,
+                ),
+                const SizedBox(width: AppSpace.x3),
+                Expanded(
+                  child: Text(
+                    chosen ? time!.format(context) : 'เลือกเวลา',
+                    style: AppText.body.copyWith(
+                      color: chosen ? AppColors.text : AppColors.placeholder,
+                      fontWeight:
+                          chosen ? FontWeight.w600 : FontWeight.w400,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
+                ),
+                const Icon(
+                  Icons.expand_more_rounded,
+                  size: AppMetrics.icon,
+                  color: AppColors.disabled,
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 10,
-                color: (hasTime ? color : const Color(AppColors.textSecondary))
-                    .withOpacity(0.7),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

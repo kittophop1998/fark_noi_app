@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/theme/app_colors.dart';
 
 // ─── Data Models ───────────────────────────────────────────────────────────────
 

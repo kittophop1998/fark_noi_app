@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/theme/app_shape.dart';
+import '../../../../../shared/widgets/app_chip.dart';
+import '../../../../../shared/widgets/app_text_field.dart';
 
-// ─── Popular Destinations data ────────────────────────────────────────────────
-const postTripPopularPlaces = [
-  '🏬 ฟิวเจอร์พาร์ค',
-  '🛒 Lotus\'s รังสิต',
-  '🛍️ Big C รังสิต',
-  '🏪 Makro รังสิต',
-  '🌿 ตลาดนัดอินเตอร์โซน',
-  '🍜 ตลาดรังสิต',
-  '☕ ท่าน้ำนนท์',
+/// The places most trips go, as presets.
+///
+/// Chips rather than a dropdown: these are a shortcut past typing, and a
+/// reader flicks through them. Emoji are kept out of the label and drawn as the
+/// chip's leading glyph, so a long place name truncates at the name.
+const postTripPopularPlaces = <(String, String)>[
+  ('🏬', 'ฟิวเจอร์พาร์ค'),
+  ('🛒', "Lotus's รังสิต"),
+  ('🛍️', 'Big C รังสิต'),
+  ('🏪', 'Makro รังสิต'),
+  ('🌿', 'ตลาดนัดอินเตอร์โซน'),
+  ('🍜', 'ตลาดรังสิต'),
+  ('☕', 'ท่าน้ำนนท์'),
 ];
 
 class PostTripDestinationInput extends StatelessWidget {
@@ -20,80 +26,42 @@ class PostTripDestinationInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    return AppTextField(
       controller: controller,
-      decoration: InputDecoration(
-        hintText: 'เช่น ฟิวเจอร์พาร์ค, Lotus\'s, ตลาดนัดอินเตอร์โซน',
-        hintStyle: TextStyle(
-            fontSize: 13, color: const Color(AppColors.textSecondary).withOpacity(0.6)),
-        prefixIcon:
-            const Icon(Icons.location_on_outlined, color: Color(AppColors.primary)),
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(AppColors.primary), width: 1.8),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.red),
-        ),
-      ),
+      hint: "เช่น ฟิวเจอร์พาร์ค, Lotus's, ตลาดนัดอินเตอร์โซน",
+      prefixIcon: Icons.location_on_outlined,
+      textInputAction: TextInputAction.next,
       validator: (v) =>
           (v == null || v.trim().isEmpty) ? 'กรุณาระบุสถานที่ที่จะไป' : null,
     );
   }
 }
 
+/// The presets, bled to the page edge so the last one scrolls past the gutter
+/// rather than looking clipped by it.
 class PostTripQuickSelectPlaces extends StatelessWidget {
-  const PostTripQuickSelectPlaces({super.key, required this.onSelect});
+  const PostTripQuickSelectPlaces({
+    super.key,
+    required this.onSelect,
+    required this.selected,
+  });
 
   final ValueChanged<String> onSelect;
+  final String selected;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: postTripPopularPlaces.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final place = postTripPopularPlaces[i];
-          return InkWell(
-            onTap: () => onSelect(place),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: Color(AppColors.primary).withOpacity(0.3)),
-              ),
-              child: Text(
-                place,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(AppColors.primary),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+    return AppChoiceChipRow(
+      padding: EdgeInsets.zero,
+      children: [
+        for (final place in postTripPopularPlaces)
+          AppChoiceChip(
+            label: place.$2,
+            selected: selected == place.$2,
+            leading: Text(place.$1, style: const TextStyle(fontSize: 13)),
+            onTap: () => onSelect(place.$2),
+          ),
+      ],
     );
   }
 }

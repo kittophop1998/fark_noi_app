@@ -56,9 +56,19 @@ flutter:
     - assets/images/
     - assets/icons/
 
-  # fonts:                         # ← เปิดใช้เมื่อมีไฟล์ font จริงใน assets/fonts/
-  #   - family: AppFont
-  #     fonts:
-  #       - asset: assets/fonts/AppFont-Regular.ttf
-  #       - asset: assets/fonts/AppFont-Bold.ttf
-  #         weight: 700
+  # Anuphan — the same Thai/Latin face the web app ships (frontend/public/font).
+  # One family, five weights: 300/400/500/600/700 map to the design system's
+  # light / regular / medium / semibold / bold steps.
+  fonts:
+    - family: Anuphan
+      fonts:
+        - asset: assets/fonts/Anuphan-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Anuphan-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Anuphan-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Anuphan-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Anuphan-Bold.ttf
+          weight: 700

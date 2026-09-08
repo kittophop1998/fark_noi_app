@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/theme/app_shape.dart';
+import '../../../../../shared/widgets/app_chip.dart';
 
-// ─── Category data ────────────────────────────────────────────────────────────
-const postTripCategories = [
+/// What this runner is willing to carry.
+const postTripCategories = <(String, String)>[
   ('🍔', 'ของกิน'),
   ('👕', 'เสื้อผ้า'),
   ('🏬', 'ของในห้าง'),
@@ -12,6 +13,9 @@ const postTripCategories = [
   ('📦', 'อื่นๆ'),
 ];
 
+/// Several choices from a few, so chips rather than a radio group — and they
+/// wrap rather than scroll, because the whole set has to be visible before a
+/// reader can decide which of them apply.
 class PostTripCategoryPicker extends StatelessWidget {
   const PostTripCategoryPicker({
     super.key,
@@ -25,44 +29,17 @@ class PostTripCategoryPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: postTripCategories.map((cat) {
-        final isSelected = selected.contains(cat.$2);
-        return GestureDetector(
-          onTap: () => onToggle(cat.$2),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: isSelected ? Color(AppColors.primary) : AppColors.surface,
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(
-                color: isSelected ? Color(AppColors.primary) : AppColors.border,
-                width: isSelected ? 1.5 : 1,
-              ),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: Color(AppColors.primary).withOpacity(0.25),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : [],
-            ),
-            child: Text(
-              '${cat.$1}  ${cat.$2}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : const Color(AppColors.textPrimary),
-              ),
-            ),
+      spacing: AppSpace.x2,
+      runSpacing: AppSpace.x2,
+      children: [
+        for (final category in postTripCategories)
+          AppChoiceChip(
+            label: category.$2,
+            selected: selected.contains(category.$2),
+            leading: Text(category.$1, style: const TextStyle(fontSize: 13)),
+            onTap: () => onToggle(category.$2),
           ),
-        );
-      }).toList(),
+      ],
     );
   }
 }

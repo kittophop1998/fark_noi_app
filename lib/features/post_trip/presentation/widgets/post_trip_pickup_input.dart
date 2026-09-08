@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../core/constants/app_colors.dart';
+import '../../../../../shared/widgets/app_text_field.dart';
 
 class PostTripPickupInput extends StatelessWidget {
   const PostTripPickupInput({super.key, required this.controller});
@@ -9,38 +9,15 @@ class PostTripPickupInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    return AppTextField(
       controller: controller,
+      hint: 'เช่น "ผ่านหอทรงพิเชษฐ์ → จอดหน้าตึก SC" หรือ "นัดรับใต้ตึก C"',
       maxLines: 3,
-      decoration: InputDecoration(
-        hintText:
-            'เช่น "ผ่านหอทรงพิเชษฐ์ → จอดหน้าตึก SC" หรือ "นัดรับใต้ตึก C ได้เลย"',
-        hintStyle: TextStyle(
-            fontSize: 12,
-            color: const Color(AppColors.textSecondary).withOpacity(0.6),
-            height: 1.5),
-        prefixIcon: const Padding(
-          padding: EdgeInsets.only(bottom: 42),
-          child: Icon(Icons.alt_route_rounded, color: Color(AppColors.primary)),
-        ),
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: Color(AppColors.primary), width: 1.8),
-        ),
-      ),
+      minLines: 3,
+      // A hint about *why* the detail matters, kept as helper text rather than
+      // as a notice: it is guidance on filling one field in, not a rule about
+      // the product.
+      helper: 'ยิ่งระบุชัด ยิ่งหากันเจอง่ายตอนส่งของ',
     );
   }
 }
