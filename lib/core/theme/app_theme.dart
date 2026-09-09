@@ -104,8 +104,8 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.45),
-          disabledForegroundColor: AppColors.onPrimary.withValues(alpha: 0.45),
+          disabledBackgroundColor: AppColors.primary.withOpacity(0.45),
+          disabledForegroundColor: AppColors.onPrimary.withOpacity(0.45),
           minimumSize: const Size(0, AppMetrics.controlMd),
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.x4),
           elevation: 0,
@@ -156,7 +156,7 @@ class AppTheme {
         disabledBorder: _fieldBorder(AppColors.borderSubtle),
       ),
 
-      cardTheme: const CardThemeData(
+      cardTheme: const CardTheme(
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -187,7 +187,7 @@ class AppTheme {
         size: AppMetrics.icon,
       ),
 
-      dialogTheme: const DialogThemeData(
+      dialogTheme: const DialogTheme(
         backgroundColor: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

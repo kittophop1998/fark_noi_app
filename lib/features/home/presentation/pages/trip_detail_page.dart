@@ -6,16 +6,16 @@ import '../../../../shared/models/prompt_pay_config.dart';
 import '../../domain/entities/home_entity.dart';
 
 // ─── Color shortcuts (all from AppColors) ────────────────────────────────────
-const _kPrimary      = Color(AppColors.primary);
-const _kPrimaryLight = AppColors.primaryLight;
-const _kAction       = AppColors.action;
-const _kActionLight  = AppColors.actionLight;
+const _kPrimary      = AppColors.primary;
+const _kPrimaryLight = AppColors.primarySoft;
+const _kAction       = AppColors.warning;
+const _kActionLight  = AppColors.warningSoft;
 const _kError        = AppColors.error;
-const _kErrorLight   = AppColors.errorLight;
-const _kTextPrimary  = Color(AppColors.textPrimary);
-const _kTextSecondary = Color(AppColors.textSecondary);
+const _kErrorLight   = AppColors.errorSoft;
+const _kTextPrimary  = AppColors.text;
+const _kTextSecondary = AppColors.muted;
 const _kBorder       = AppColors.border;
-const _kBg           = AppColors.bgPage;
+const _kBg           = AppColors.background;
 
 // ─── Payment Status ──────────────────────────────────────
 enum _PaymentStatus { pending, waitingPayment, paid }

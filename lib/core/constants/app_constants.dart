@@ -4,7 +4,7 @@ class AppConstants {
   // API
   static const baseUrl = String.fromEnvironment(
     'BASE_URL',
-    defaultValue: 'https://YOUR_REAL_API_URL_HERE', // TODO: เปลี่ยนเป็น URL จริง
+    defaultValue: 'https://farknoi-backend.onrender.com',
   );
   static const apiVersion = '/api/v1';
   static const connectTimeout = Duration(seconds: 30);

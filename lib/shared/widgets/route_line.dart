@@ -54,7 +54,7 @@ class RouteMarker extends StatelessWidget {
           color: AppColors.routeCurrent,
           shadow: [
             BoxShadow(
-              color: AppColors.routeCurrent.withValues(alpha: 0.22),
+              color: AppColors.routeCurrent.withOpacity(0.22),
               spreadRadius: 4,
             ),
           ],

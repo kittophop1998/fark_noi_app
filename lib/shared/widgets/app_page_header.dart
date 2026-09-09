@@ -86,7 +86,7 @@ class AppPageHeader extends StatelessWidget {
       _onDark ? AppColors.headerOnBrandMuted : AppColors.headerInkMuted;
 
   Color get _controlPlate => _onDark
-      ? AppColors.headerOnBrand.withValues(alpha: 0.15)
+      ? AppColors.headerOnBrand.withOpacity(0.15)
       : AppColors.surfaceMuted;
 
   @override

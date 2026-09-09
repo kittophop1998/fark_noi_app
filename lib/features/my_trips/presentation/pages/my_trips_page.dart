@@ -9,15 +9,15 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/prompt_pay_config.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
-const _kPrimary       = Color(AppColors.primary);
-const _kPrimaryLight  = AppColors.primaryLight;
-const _kAction        = AppColors.action;
-const _kActionLight   = AppColors.actionLight;
+const _kPrimary       = AppColors.primary;
+const _kPrimaryLight  = AppColors.primarySoft;
+const _kAction        = AppColors.warning;
+const _kActionLight   = AppColors.warningSoft;
 const _kError         = AppColors.error;
-const _kErrorLight    = AppColors.errorLight;
-const _kBg            = AppColors.bgPage;
-const _kTextPrimary   = Color(AppColors.textPrimary);
-const _kTextSecondary = Color(AppColors.textSecondary);
+const _kErrorLight    = AppColors.errorSoft;
+const _kBg            = AppColors.background;
+const _kTextPrimary   = AppColors.text;
+const _kTextSecondary = AppColors.muted;
 const _kBorder        = AppColors.border;
 
 // ─── Entry Point ────────────────────────────────────────

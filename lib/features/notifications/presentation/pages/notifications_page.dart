@@ -156,13 +156,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final filtered = _filtered;
 
     return Scaffold(
-      backgroundColor: AppColors.bgPage,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.bgPage,
+        backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded,
-              color: const Color(AppColors.textPrimary), size: 20),
+              color: AppColors.text, size: 20),
           onPressed: () => context.pop(),
         ),
         title: Row(
@@ -173,7 +173,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: const Color(AppColors.textPrimary),
+                color: AppColors.text,
               ),
             ),
             if (_unreadCount > 0) ...[
@@ -182,7 +182,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.action,
+                  color: AppColors.warning,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -204,7 +204,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               child: const Text(
                 'อ่านทั้งหมด',
                 style: TextStyle(
-                  color: Color(AppColors.primary),
+                  color: AppColors.primary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -216,7 +216,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
               child: const Text(
                 'ล้างทั้งหมด',
                 style: TextStyle(
-                  color: Color(AppColors.primary),
+                  color: AppColors.primary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -269,7 +269,7 @@ class _FilterBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.bgPage,
+      color: AppColors.background,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
@@ -309,7 +309,7 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const primary = Color(AppColors.primary);
+    const primary = AppColors.primary;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -334,7 +334,7 @@ class _FilterChip extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : const Color(AppColors.textSecondary),
+            color: isSelected ? Colors.white : AppColors.muted,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -361,22 +361,22 @@ class _NotiCard extends StatelessWidget {
   Color get _accentColor {
     switch (item.type) {
       case NotiType.actionRequired:
-        return AppColors.action; // Orange-Red #FF4500 — urgent / payment
+        return AppColors.warning; // urgent / payment
       case NotiType.update:
-        return const Color(AppColors.primary); // Purple — info update
+        return AppColors.primary; // Purple — info update
       case NotiType.general:
-        return Color(AppColors.primary); // Lavender purple — soft general
+        return AppColors.primary; // Lavender purple — soft general
     }
   }
 
   Color get _bgColor {
     switch (item.type) {
       case NotiType.actionRequired:
-        return AppColors.actionLight; // soft orange-red tint
+        return AppColors.warningSoft; // soft orange-red tint
       case NotiType.update:
-        return AppColors.primaryLight; // soft purple tint
+        return AppColors.primarySoft; // soft purple tint
       case NotiType.general:
-        return AppColors.primaryLight; // soft lavender
+        return AppColors.primarySoft; // soft lavender
     }
   }
 
@@ -512,8 +512,8 @@ class _NotiCard extends StatelessWidget {
                               margin: const EdgeInsets.only(right: 6, top: 1),
                               decoration: BoxDecoration(
                                 color: item.type == NotiType.actionRequired
-                                    ? AppColors.action
-                                    : const Color(AppColors.primary),
+                                    ? AppColors.warning
+                                    : AppColors.primary,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -527,8 +527,8 @@ class _NotiCard extends StatelessWidget {
                                     ? FontWeight.w500
                                     : FontWeight.w700,
                                 color: item.isRead
-                                    ? const Color(AppColors.textSecondary)
-                                    : const Color(AppColors.textPrimary),
+                                    ? AppColors.muted
+                                    : AppColors.text,
                                 height: 1.3,
                               ),
                             ),
@@ -630,11 +630,11 @@ class _EmptyState extends StatelessWidget {
             width: 120,
             height: 120,
             decoration: BoxDecoration(
-              color: AppColors.primaryLight,
+              color: AppColors.primarySoft,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: const Color(AppColors.primary).withOpacity(0.15),
+                  color: AppColors.primary.withOpacity(0.15),
                   blurRadius: 20,
                   spreadRadius: 5,
                 ),
@@ -650,7 +650,7 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: const Color(AppColors.textPrimary),
+              color: AppColors.text,
             ),
           ),
           const SizedBox(height: 8),
