@@ -10,7 +10,12 @@ import '../../core/theme/app_typography.dart';
 /// beside the enum, in the feature, because a tone is a *product* judgement:
 /// "ส่งของแล้ว" is a warning in this product because the goods arrived and the
 /// money has not, and nothing in a design system knows that.
-enum AppTone { success, warning, error, info, neutral, brand }
+///
+/// [AppTone.trust] is the teal one, and it is deliberately not a status:
+/// `success` says a thing *finished*, `trust` says a thing is *vouched for* —
+/// an identity confirmed, a payment handle, a safety note. A product that moves
+/// money must not slur the two, so they are separate tones over separate hues.
+enum AppTone { success, warning, error, info, neutral, brand, trust }
 
 enum AppBadgeSize { small, medium }
 
@@ -90,6 +95,8 @@ Color toneSoft(AppTone tone) {
       return AppColors.surfaceMuted;
     case AppTone.brand:
       return AppColors.primarySoft;
+    case AppTone.trust:
+      return AppColors.trustSoft;
   }
 }
 
@@ -108,6 +115,8 @@ Color toneInk(AppTone tone) {
       return AppColors.muted;
     case AppTone.brand:
       return AppColors.primaryInk;
+    case AppTone.trust:
+      return AppColors.trustStrong;
   }
 }
 
@@ -126,6 +135,8 @@ Color toneColor(AppTone tone) {
       return AppColors.faint;
     case AppTone.brand:
       return AppColors.brand;
+    case AppTone.trust:
+      return AppColors.trust;
   }
 }
 
@@ -144,5 +155,7 @@ Color toneBorder(AppTone tone) {
       return AppColors.border;
     case AppTone.brand:
       return AppColors.primaryBorder;
+    case AppTone.trust:
+      return AppColors.trustBorder;
   }
 }

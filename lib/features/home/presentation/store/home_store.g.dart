@@ -73,8 +73,9 @@ mixin _$HomeStore on _HomeStore, Store {
       AsyncAction('_HomeStore.fetchHomeData', context: context);
 
   @override
-  Future<void> fetchHomeData() {
-    return _$fetchHomeDataAsyncAction.run(() => super.fetchHomeData());
+  Future<void> fetchHomeData({bool askForLocation = true}) {
+    return _$fetchHomeDataAsyncAction
+        .run(() => super.fetchHomeData(askForLocation: askForLocation));
   }
 
   late final _$_HomeStoreActionController =

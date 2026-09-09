@@ -22,6 +22,13 @@ mixin _$PostTripStore on _PostTripStore, Store {
       (_$isTimeValidComputed ??= Computed<bool>(() => super.isTimeValid,
               name: '_PostTripStore.isTimeValid'))
           .value;
+  Computed<bool>? _$hasDestinationComputed;
+
+  @override
+  bool get hasDestination =>
+      (_$hasDestinationComputed ??= Computed<bool>(() => super.hasDestination,
+              name: '_PostTripStore.hasDestination'))
+          .value;
 
   late final _$destinationAtom =
       Atom(name: '_PostTripStore.destination', context: context);
@@ -36,6 +43,54 @@ mixin _$PostTripStore on _PostTripStore, Store {
   set destination(String value) {
     _$destinationAtom.reportWrite(value, super.destination, () {
       super.destination = value;
+    });
+  }
+
+  late final _$selectedStoreAtom =
+      Atom(name: '_PostTripStore.selectedStore', context: context);
+
+  @override
+  CatalogueStore? get selectedStore {
+    _$selectedStoreAtom.reportRead();
+    return super.selectedStore;
+  }
+
+  @override
+  set selectedStore(CatalogueStore? value) {
+    _$selectedStoreAtom.reportWrite(value, super.selectedStore, () {
+      super.selectedStore = value;
+    });
+  }
+
+  late final _$storeResultsAtom =
+      Atom(name: '_PostTripStore.storeResults', context: context);
+
+  @override
+  ObservableList<CatalogueStore> get storeResults {
+    _$storeResultsAtom.reportRead();
+    return super.storeResults;
+  }
+
+  @override
+  set storeResults(ObservableList<CatalogueStore> value) {
+    _$storeResultsAtom.reportWrite(value, super.storeResults, () {
+      super.storeResults = value;
+    });
+  }
+
+  late final _$isSearchingStoresAtom =
+      Atom(name: '_PostTripStore.isSearchingStores', context: context);
+
+  @override
+  bool get isSearchingStores {
+    _$isSearchingStoresAtom.reportRead();
+    return super.isSearchingStores;
+  }
+
+  @override
+  set isSearchingStores(bool value) {
+    _$isSearchingStoresAtom.reportWrite(value, super.isSearchingStores, () {
+      super.isSearchingStores = value;
     });
   }
 
@@ -182,6 +237,14 @@ mixin _$PostTripStore on _PostTripStore, Store {
     });
   }
 
+  late final _$searchStoresAsyncAction =
+      AsyncAction('_PostTripStore.searchStores', context: context);
+
+  @override
+  Future<void> searchStores(String term) {
+    return _$searchStoresAsyncAction.run(() => super.searchStores(term));
+  }
+
   late final _$submitAsyncAction =
       AsyncAction('_PostTripStore.submit', context: context);
 
@@ -199,6 +262,17 @@ mixin _$PostTripStore on _PostTripStore, Store {
         name: '_PostTripStore.setDestination');
     try {
       return super.setDestination(v);
+    } finally {
+      _$_PostTripStoreActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  void selectStore(CatalogueStore store) {
+    final _$actionInfo = _$_PostTripStoreActionController.startAction(
+        name: '_PostTripStore.selectStore');
+    try {
+      return super.selectStore(store);
     } finally {
       _$_PostTripStoreActionController.endAction(_$actionInfo);
     }
@@ -285,6 +359,9 @@ mixin _$PostTripStore on _PostTripStore, Store {
   String toString() {
     return '''
 destination: ${destination},
+selectedStore: ${selectedStore},
+storeResults: ${storeResults},
+isSearchingStores: ${isSearchingStores},
 fee: ${fee},
 pickupPoint: ${pickupPoint},
 departureTime: ${departureTime},
@@ -295,7 +372,8 @@ isSubmitting: ${isSubmitting},
 isSubmitted: ${isSubmitted},
 errorMessage: ${errorMessage},
 hasError: ${hasError},
-isTimeValid: ${isTimeValid}
+isTimeValid: ${isTimeValid},
+hasDestination: ${hasDestination}
     ''';
   }
 }

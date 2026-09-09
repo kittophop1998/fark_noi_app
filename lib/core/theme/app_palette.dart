@@ -14,20 +14,24 @@ class AppPalette {
 
   // ── FarkNoi coral — the brand ramp ────────────────────────────────────
   //
+  // The ramp is anchored at 600 = #F2553D, the approved Coral. Every other step
+  // is that hue (~8°) walked up and down in lightness, so the family reads as
+  // one colour rather than a set.
+  //
   // Which step each *role* takes is a contrast decision, not a taste one:
-  // white on 500 is 2.91:1, so 500 stays the *mark* (a shape, never a word),
+  // white on 500 is 2.8:1, so 500 stays the *mark* (a shape, never a word),
   // the filled action takes 600, coral text on white takes 700, and coral text
   // on a coral tint takes 800.
   static const Color primary50 = Color(0xFFFFF5F2);
-  static const Color primary100 = Color(0xFFFFE8E1);
-  static const Color primary200 = Color(0xFFFFD0C4);
-  static const Color primary300 = Color(0xFFFFAD98);
-  static const Color primary400 = Color(0xFFFF8065);
-  static const Color primary500 = Color(0xFFFF6548);
-  static const Color primary600 = Color(0xFFF24E32);
-  static const Color primary700 = Color(0xFFCC3B24);
-  static const Color primary800 = Color(0xFFA93221);
-  static const Color primary900 = Color(0xFF8B2E22);
+  static const Color primary100 = Color(0xFFFFE5E0);
+  static const Color primary200 = Color(0xFFFFCBC2);
+  static const Color primary300 = Color(0xFFFFA899);
+  static const Color primary400 = Color(0xFFFC7F69);
+  static const Color primary500 = Color(0xFFF66B55);
+  static const Color primary600 = Color(0xFFF2553D);
+  static const Color primary700 = Color(0xFFC53620);
+  static const Color primary800 = Color(0xFF9F2F1E);
+  static const Color primary900 = Color(0xFF7C2A1D);
 
   // ── Neutrals ──────────────────────────────────────────────────────────
   //
@@ -44,11 +48,31 @@ class AppPalette {
   static const Color neutral300 = Color(0xFFDEE2E6);
   static const Color neutral400 = Color(0xFFADB5BD);
   static const Color neutral500 = Color(0xFF868E96);
-  static const Color neutral600 = Color(0xFF6B7280);
+  static const Color neutral600 = Color(0xFF68707C);
   static const Color neutral700 = Color(0xFF4B5563);
-  static const Color neutral800 = Color(0xFF2F3437);
-  static const Color neutral900 = Color(0xFF191C1F);
-  static const Color neutral950 = Color(0xFF0B0D0F);
+  static const Color neutral800 = Color(0xFF363C45);
+  static const Color neutral900 = Color(0xFF252A31);
+  static const Color neutral950 = Color(0xFF14181D);
+
+  // ── Deep teal — trust ─────────────────────────────────────────────────
+  //
+  // The second accent, and deliberately *not* a second call to action. Teal is
+  // what the product says about itself rather than what it asks you to do:
+  // an identity confirmed, a payment handle, a community signal. Anchored at
+  // 600 = #176B63, with 50 = #E4F2EF, the mint a teal panel sits on.
+  //
+  // It earns the job coral cannot do: #176B63 is 6.3:1 on white *and* 5.5:1 on
+  // its own mint, so the same colour can be the icon and the sentence.
+  static const Color teal50 = Color(0xFFE4F2EF);
+  static const Color teal100 = Color(0xFFCEE9E5);
+  static const Color teal200 = Color(0xFFACD8D2);
+  static const Color teal300 = Color(0xFF81C1B8);
+  static const Color teal400 = Color(0xFF46A499);
+  static const Color teal500 = Color(0xFF2A847B);
+  static const Color teal600 = Color(0xFF176B63);
+  static const Color teal700 = Color(0xFF125952);
+  static const Color teal800 = Color(0xFF0E4944);
+  static const Color teal900 = Color(0xFF0A3835);
 
   // ── Green — success, arrival, and the journey accent ───────────────────
   static const Color green50 = Color(0xFFECFDF5);

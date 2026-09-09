@@ -35,10 +35,22 @@ dependencies:
   # Navigation
   go_router: ^12.1.1
 
+  # Location — GET /trips/nearby is measured from the caller's coordinate.
+  #
+  # geolocator_android is pinned below 4.6.2: from that version its Gradle
+  # script reads `flutter.compileSdkVersion`, an extension the Flutter tool
+  # installs on `:app` only from 3.27 onwards. On the 3.24.5 this project is
+  # fvm-pinned to, the plugin's own module cannot see it and Gradle refuses the
+  # build with "unknown property 'flutter'". 4.5.5 states its levels itself.
+  geolocator: ^13.0.1
+
   # Utils
   dartz: ^0.10.1
   intl: ^0.18.1
   logger: ^2.0.2+1
+
+dependency_overrides:
+  geolocator_android: 4.5.5
 
 dev_dependencies:
   flutter_test:

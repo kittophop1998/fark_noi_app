@@ -20,6 +20,21 @@ class AppConstants {
   static const defaultPageSize = 20;
   static const defaultPage = 1;
 
+  // Location
+  //
+  // `GET /trips/nearby` takes a coordinate and has no default of its own — the
+  // 7 km feed is measured from wherever the caller says they are. These are
+  // what the app asks for when the device will not say: Thammasat Rangsit,
+  // where the product's first users are. A feed drawn from here is still a real
+  // feed, which is the point — an empty screen and a permission prompt would
+  // read as "there are no trips".
+  static const fallbackLatitude = 14.0705;
+  static const fallbackLongitude = 100.6060;
+
+  /// How long a fix may take before the fallback is used instead. A discovery
+  /// feed that waits on a cold GPS lock is a discovery feed nobody sees.
+  static const locationTimeout = Duration(seconds: 8);
+
   // Animation
   static const shortAnimation = Duration(milliseconds: 200);
   static const mediumAnimation = Duration(milliseconds: 400);

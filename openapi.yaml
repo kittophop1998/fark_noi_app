@@ -1,0 +1,1105 @@
+openapi: 3.0.3
+info:
+  title: FarkNoiGo API
+  version: 1.0.0
+  description: >-
+    API v1 for trip-based purchase coordination.
+
+
+    While `maintenanceMode` is on (see /api/v1/app-settings), every
+    member-facing route answers 503 MAINTENANCE_MODE. Administrators are the one
+    exemption — the console throws the switch through this API — and
+    /api/v1/app-settings, /api/v1/auth/*, /api/v1/zones, the legal documents and
+    the Stripe webhook stay open so a closed platform can still be reopened.
+servers:
+  - url: /
+tags:
+  - name: Auth
+  - name: Profile
+  - name: Users
+  - name: Trips
+  - name: Orders
+  - name: Reviews
+  - name: Media
+  - name: App settings
+  - name: Service areas
+  - name: Stores
+  - name: Legal & privacy
+  - name: Issue reports
+  - name: API usage
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Healthy }
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      description: >-
+        403 REGISTRATION_CLOSED when an administrator has switched sign-ups off,
+        the platform has reached its configured member cap, or the platform is
+        closed for maintenance. Existing accounts keep signing in. 422 EMAIL_NOT_VERIFIED when otpToken does not match a
+        verified, unexpired challenge for this exact email — checked
+        independently of anything the client believes it already did; see
+        /auth/signup/otp/verify. A token is single-use and is consumed by a
+        successful call here.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/AuthCreated' }, '400': { $ref: '#/components/responses/ValidationError' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      description: >-
+        403 ACCOUNT_SUSPENDED means the credentials were accepted but an
+        administrator has put the account beyond use, so retrying them is not
+        the answer. A closed account answers 401 like a wrong password, because
+        saying otherwise would confirm the address is registered here.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AuthOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+  /api/v1/auth/google:
+    post:
+      tags: [Auth]
+      description: >-
+        A first Google sign-in creates an account, so it answers 403
+        REGISTRATION_CLOSED under the same rule as /auth/register. An account
+        that already exists signs in regardless.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GoogleLoginRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AuthOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/auth/signup/otp/send:
+    post:
+      tags: [Auth]
+      summary: Mail a fresh sign-up verification code
+      description: >-
+        Answers the same success whether or not the address already has an
+        account, so this cannot be used to check who has signed up — that
+        answer still comes from /auth/register's 409 CONFLICT.
+        429 SIGNUP_OTP_COOLDOWN when a code was sent to this address less than
+        SIGNUP_OTP_RESEND_COOLDOWN_SECONDS ago; sending a fresh code
+        invalidates whatever was sent before it. 503 SIGNUP_OTP_UNAVAILABLE
+        when this deployment has no Redis or no Resend configured.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SendSignupOTPRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/SignupOTPSent' }, '400': { $ref: '#/components/responses/ValidationError' }, '429': { $ref: '#/components/responses/Error' }, '502': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/auth/signup/otp/verify:
+    post:
+      tags: [Auth]
+      summary: Check a sign-up verification code
+      description: >-
+        On success, answers with the one-time token /auth/register accepts as
+        otpToken. 422 SIGNUP_OTP_INVALID for a wrong code or an email with no
+        outstanding challenge; 422 SIGNUP_OTP_EXPIRED once the code's window
+        has closed; 429 SIGNUP_OTP_LOCKED after SIGNUP_OTP_MAX_ATTEMPTS wrong
+        guesses against one code, which only a fresh send can clear.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/VerifySignupOTPRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/SignupOTPVerified' }, '400': { $ref: '#/components/responses/ValidationError' }, '422': { $ref: '#/components/responses/Error' }, '429': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new token pair
+      description: >-
+        Unauthenticated on purpose: the refresh token in the body is the
+        credential, and an expired access token is the situation this exists
+        for. An access token presented here is rejected.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AuthOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' } }
+  /api/v1/me:
+    get:
+      tags: [Profile]
+      summary: The signed-in user's own profile
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/ProfileOK' }, '401': { $ref: '#/components/responses/Error' } }
+    patch:
+      tags: [Profile]
+      summary: Edit display name, profile picture and payment account
+      description: >-
+        A partial update; omitted fields are left alone. The avatar is adopted
+        by media id from a confirmed PROFILE_IMAGE upload the caller owns, never
+        by URL. promptPayId is the mobile number or national id this user is
+        paid into when they run an errand; it is stored as bare digits, a
+        national id is checked against its check digit, and an empty string
+        removes the account. 422 PROMPTPAY_ID_INVALID rejects anything else.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProfileRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/ProfileOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/legal/documents:
+    get:
+      tags: [Legal & privacy]
+      summary: Current published legal documents
+      description: Draft documents are never returned. The published content and server-generated SHA-256 hash identify the exact words shown to a person.
+      responses: { '200': { $ref: '#/components/responses/LegalDocumentsOK' } }
+  /api/v1/legal/documents/{documentType}:
+    get:
+      tags: [Legal & privacy]
+      summary: Current published version by document type
+      parameters: [ { name: documentType, in: path, required: true, schema: { type: string, enum: [TERMS_OF_SERVICE, PRIVACY_POLICY, MARKETING_CONSENT] } } ]
+      responses: { '200': { $ref: '#/components/responses/LegalDocumentOK' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/me/legal-status:
+    get:
+      tags: [Legal & privacy]
+      summary: Authenticated user's required legal actions
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/LegalStatusOK' }, '401': { $ref: '#/components/responses/Error' } }
+  /api/v1/me/legal-acceptances:
+    get:
+      tags: [Legal & privacy]
+      summary: The caller's acceptance history
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/LegalAcceptancesOK' }, '401': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Legal & privacy]
+      summary: Deliberately record acceptance, acknowledgment, or marketing consent
+      description: The caller may name only the document type, current version, action and source. Identity, timestamp, hash, and network evidence are server-derived; retries are idempotent.
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { $ref: '#/components/responses/LegalAcceptanceCreated' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/me/marketing-consent/withdraw:
+    post:
+      tags: [Legal & privacy]
+      summary: Withdraw optional marketing consent without erasing prior evidence
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { $ref: '#/components/responses/LegalAcceptanceCreated' } }
+  /api/v1/me/privacy-requests:
+    post:
+      tags: [Legal & privacy]
+      summary: Request data export or correction
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { $ref: '#/components/responses/PrivacyRequestCreated' } }
+  /api/v1/me/account-deletion-requests:
+    post:
+      tags: [Legal & privacy]
+      summary: Submit an account-deletion request after re-authentication and confirmation
+      security: [{ bearerAuth: [] }]
+      responses: { '201': { $ref: '#/components/responses/PrivacyRequestCreated' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/me/issue-reports:
+    get:
+      tags: [Issue reports]
+      summary: The caller's own reports, newest first
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/IssueReportStatus' } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/IssueReportPageOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Issue reports]
+      summary: Report a problem ("แจ้งปัญหา")
+      description: >-
+        The reporter's name and email are read from the token and snapshotted on
+        the report; a client cannot name who is reporting. The phone number is
+        asked for separately from the account's own, because the number somebody
+        wants to be rung on today is not always the one they registered with —
+        separators are dropped and 6 to 20 digits are required.
+
+
+        Rate limited, because each call costs a permanent row and a person on the
+        other end reading it. Not behind the terms-acceptance gate: somebody
+        stuck at that gate is exactly the person who has to be able to say so.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateIssueReportRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/IssueReportCreated' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' }, '429': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/issue-reports:
+    get:
+      tags: [Issue reports]
+      summary: The reported-problem queue (administrators only)
+      description: Every report, newest first, carrying who wrote it and the number to ring back.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/IssueReportStatus' } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/AdminIssueReportPageOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/issue-reports/{reportId}/resolve:
+    post:
+      tags: [Issue reports]
+      summary: Record what was done about a report (administrators only)
+      description: >-
+        IN_PROGRESS leaves the report open and stamps nothing as resolved, so
+        "somebody has picked this up" is expressible without claiming the problem
+        is finished. RESOLVED and CLOSED are terminal and stamp who and when; a
+        second attempt on a finished report answers 409 rather than overwriting
+        the first operator's answer. It moves no money and changes no order.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/IssueReportID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ResolveIssueReportRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AdminIssueReportOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/users:
+    get:
+      tags: [Users]
+      summary: The member directory (administrators only)
+      description: >-
+        Every account, including the suspended and the closed. The search term
+        is matched against display name, email and phone number, anywhere and
+        case-insensitively. Newest first. A row carries the contact details an
+        administrator answers a support request with, and never the password
+        hash or the PromptPay account.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/AccountStatus' } }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/UserRole' }, description: 'USER means "not an administrator", so accounts stored before the role existed are included' }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/AdminUserPageOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/users/{userId}/reset-password:
+    post:
+      tags: [Users]
+      summary: Set a member's password for them (administrators only)
+      description: >-
+        The platform's whole account-recovery story until a self-service reset
+        exists: a member who has forgotten their password is given a new one out
+        of band. The old password is never asked for — the person asking is
+        precisely the one who does not have it — and no email is sent.
+
+
+        It does not end the sessions the account already has: access tokens are
+        signed rather than stored, so nothing can withdraw one before it
+        expires. Suspending the account is what stops a session in progress.
+        Setting a password on a Google-only account creates a password login
+        that did not exist before.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/UserID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ResetPasswordRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AdminUserOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/users/{userId}/status:
+    patch:
+      tags: [Users]
+      summary: Suspend, close or restore an account (administrators only)
+      description: >-
+        SUSPENDED refuses the next sign-in with 403 ACCOUNT_SUSPENDED and stops
+        every token renewal; DELETED does the same but is reported as ordinary
+        bad credentials. Every status may follow every other one, because a
+        decision made in error has to be reversible from the same screen.
+
+
+        422 CANNOT_CHANGE_OWN_STATUS refuses the account making the request: a
+        suspended administrator cannot sign in to undo it. Trips and orders in
+        flight are not cancelled by a suspension.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/UserID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateUserStatusRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AdminUserOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/trips:
+    get:
+      tags: [Trips]
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/TripListOK' }, '401': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Trips]
+      description: >-
+        422 OUT_OF_SERVICE_AREA when the origin falls outside every enabled zone
+        and the service-area rule is switched on. The rule is applied to the
+        origin only — a trip is announced from where the runner is leaving, and
+        refusing a destination outside the area would stop somebody travelling
+        out of town from carrying anything at all. See GET /api/v1/zones for the
+        boundaries and whether they are being applied.
+
+
+        409 TRIP_ALREADY_ACTIVE when the caller already has a trip in OPEN or
+        IN_PROGRESS. One runner can only be on one journey at a time, so a
+        second announced trip would be a promise nobody can keep. The refusal
+        clears itself: completing or cancelling that trip allows the next one.
+        GET /api/v1/me/trips?status=OPEN is where the client finds the trip in
+        the way.
+
+
+        422 TRIP_PRICING_INVALID when the pricing block names TRAVELER_DEFINED
+        without a type, or a type without a positive amount for it. An omitted
+        pricing block is REQUESTER_OFFER, which is what every trip announced
+        before traveller-defined pricing existed is on.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTripRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/TripCreated' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/trips/nearby:
+    get:
+      tags: [Trips]
+      description: Returns trips whose origin OR destination lies inside the scope asked for — a fixed 7 km of lat/lng, or the whole administrative province lat/lng falls in — each carrying matchType and a distance measured from the end that matched; a trip matching both ends is returned once, as its origin match. Also returns privacy-safe route geometry for map previews and active catalogue stores within 2 km of lat/lng. Nearby 7-Eleven locations discovered through OSM are best-effort additions; provider failure does not fail the trip response. The origin is rounded to an approximately 1 km area; the destination remains the selected point.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, format: double, minimum: -90, maximum: 90 } }
+        - { name: lng, in: query, required: true, schema: { type: number, format: double, minimum: -180, maximum: 180 } }
+        - { name: scope, in: query, schema: { type: string, enum: [RADIUS, PROVINCE], default: RADIUS }, description: 'RADIUS is the trips within the fixed 7 km; PROVINCE is every open trip with an end inside the enabled ADMINISTRATIVE service-area zone containing lat/lng, at any distance. 422 TRIP_AREA_UNAVAILABLE when no such zone reaches the caller — never the radius feed under a province heading. There is no radius parameter: a radiusKm left on an older client is ignored rather than refused.' }
+        - { name: storeId, in: query, schema: { type: string, format: objectid }, description: 'Narrows the feed to the runners who could buy from one shop: the trips with an origin OR a destination within 2 km of it, measured on the server against the real coordinates rather than the rounded origin this endpoint publishes. Omitted is the unfiltered feed. total counts what survived. 404 STORE_NOT_FOUND for an id nothing answers, a retired shop, or one with no usable location — never an unfiltered feed under a heading naming a shop. Whether the shop is still on Home''s row is not asked: that flag decides what Home offers next, not what somebody already looking at the shop may do.' }
+      responses: { '200': { $ref: '#/components/responses/NearbyTripsOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/trips/{tripId}:
+    get:
+      tags: [Trips]
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/TripID' } ]
+      responses: { '200': { $ref: '#/components/responses/TripOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/trips/{tripId}/pricing:
+    patch:
+      tags: [Trips]
+      summary: Re-price an open trip (its own runner only)
+      description: >-
+        The one field of an announced trip that may be edited. It reaches new
+        requests only: every order already placed carries its own pricing
+        snapshot, taken when it was created, so a re-pricing cannot change what
+        an errand somebody has already committed credit to was agreed at.
+
+
+        403 when the caller is not the trip's runner. 409 when the trip is no
+        longer OPEN — past that the journey is under way and its prices have
+        been agreed with the people on it. 422 TRIP_PRICING_INVALID for a
+        combination the trip cannot honour.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/TripID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TripPricingRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/TripOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/trips/{tripId}/orders:
+    get:
+      tags: [Trips, Orders]
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/TripID' }, { name: status, in: query, schema: { $ref: '#/components/schemas/OrderStatus' } } ]
+      responses: { '200': { $ref: '#/components/responses/OrderListOK' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Trips, Orders]
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/TripID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateOrderRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/OrderOK' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/open-orders:
+    post:
+      tags: [Orders]
+      summary: Post an unassigned request for compatible travellers to claim
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateOpenOrderRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/OrderOK' }, '401': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/trips/{tripId}/open-orders:
+    get: { tags: [Trips, Orders], summary: Compatible open requests for this trip, security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/TripID' } ], responses: { '200': { $ref: '#/components/responses/OrderListOK' }, '403': { $ref: '#/components/responses/Error' } } }
+  /api/v1/trips/{tripId}/open-orders/{orderId}/claim:
+    post: { tags: [Trips, Orders], summary: Claim one compatible open request; first successful claim wins, security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/TripID' }, { $ref: '#/components/parameters/OrderID' } ], responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /api/v1/trips/{tripId}/start:
+    post: { tags: [Trips], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/TripID' } ], responses: { '200': { $ref: '#/components/responses/TripOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /api/v1/trips/{tripId}/complete:
+    post: { tags: [Trips], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/TripID' } ], responses: { '200': { $ref: '#/components/responses/TripOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /api/v1/trips/{tripId}/cancel:
+    post: { tags: [Trips], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/TripID' } ], responses: { '200': { $ref: '#/components/responses/TripOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /api/v1/orders/{orderId}:
+    get:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/orders/{orderId}/accept:
+    post:
+      tags: [Orders]
+      summary: 'รับคำฝาก: the runner answers a request on their own trip'
+      description: >-
+        Runner-only, REQUESTED -> ACCEPTED, and it takes one of the trip's
+        seats. The trip has to still be OPEN and have a seat free; the
+        departure time does not gate this call, so a request that arrived
+        before departure can still be answered after it — new requests are
+        refused past departure by POST /trips/{tripId}/orders instead.
+
+        The 409 says which refusal it is: TRIP_NOT_OPEN for a trip that was
+        started, finished or called off, TRIP_FULL when every seat is taken,
+        and CONFLICT only for a genuine race — the order moved while the
+        request was in flight. RUNNER_JOB_LIMIT_REACHED is the runner's own
+        plan limit rather than the trip's, and carries activeJobs and
+        maxActiveJobs under details.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
+  /api/v1/orders/{orderId}/reject:
+    post: { tags: [Orders], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/OrderID' } ], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RejectOrderRequest' } } } }, responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /api/v1/orders/{orderId}/start-purchasing:
+    post:
+      tags: [Orders]
+      summary: 'ถึงร้านแล้ว: the runner reports reaching the shop, which starts the purchase'
+      description: >-
+        Runner-only, ACCEPTED -> PURCHASING, and gated on where the runner
+        actually is. The body carries the device's current coordinate; the shop's
+        coordinate comes off the order, never from the client. Outside the
+        arrival radius the call answers 422 TOO_FAR_FROM_STORE with the distance
+        and the radius under details, and the order does not move.
+
+        The body was optional before this gate existed and is still bound
+        leniently, so an older client's empty request is answered with 422
+        LOCATION_REQUIRED rather than a bare 400.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ArrivalLocation' } } } }
+      responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/orders/{orderId}/purchase:
+    post: { tags: [Orders], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/OrderID' } ], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseOrderRequest' } } } }, responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /api/v1/orders/{orderId}/start-delivery:
+    post: { tags: [Orders], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/OrderID' } ], responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /api/v1/orders/{orderId}/delivered:
+    post:
+      tags: [Orders]
+      summary: 'ส่งถึงแล้ว: the handover, evidenced and gated on the runner being at the door'
+      description: >-
+        Runner-only, DELIVERING -> DELIVERED. Two claims are checked before
+        either is recorded: the photographs must be the runner's own confirmed
+        ORDER_PROOF uploads, and the device's coordinate must be within the
+        arrival radius of the order's own delivery point. Outside it the call
+        answers 422 TOO_FAR_FROM_DELIVERY_POINT and neither the status nor the
+        photographs are stored.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DeliverOrderRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/orders/{orderId}/complete:
+    post:
+      tags: [Orders]
+      summary: The runner confirms they have been paid, which closes the order
+      description: >-
+        Runner-only; 403 for the requester. A DELIVERED order carries a payment
+        block with the runner's PromptPay account and the amount owed, the
+        requester transfers against it, and this call records that the money
+        arrived — which only the runner can know.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
+  /api/v1/orders/{orderId}/cancel:
+    post: { tags: [Orders], security: [{ bearerAuth: [] }], parameters: [ { $ref: '#/components/parameters/OrderID' } ], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CancelOrderRequest' } } } }, responses: { '200': { $ref: '#/components/responses/OrderOK' }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /api/v1/orders/{orderId}/review:
+    post:
+      tags: [Reviews]
+      summary: One side of a finished errand rates the other
+      description: >-
+        The reviewee is deliberately absent from the body: it follows from the
+        order and from the authenticated actor, which is what makes a score
+        impossible to leave for somebody you never dealt with. Restricted to the
+        errand's two parties (403), allowed only once it is COMPLETED (409
+        ORDER_NOT_REVIEWABLE), and once per side (409 REVIEW_ALREADY_SUBMITTED,
+        raised by a unique index rather than by a read, so two simultaneous taps
+        cannot both write). There is no PATCH and no DELETE: a score that can be
+        revised afterwards is one the reviewee can negotiate for.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateReviewRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/ReviewCreated' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/orders/{orderId}/reviews:
+    get:
+      tags: [Reviews]
+      summary: Both sides' reviews of one errand, and what the caller may still do
+      description: >-
+        Restricted to the errand's two parties, unlike the profile list: a review
+        read through an order also says who dealt with whom and when. canReview
+        is the server's whole rule — completed, a participant, not yet reviewed —
+        so a client never draws a form the submit would refuse.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+      responses: { '200': { $ref: '#/components/responses/OrderReviewsOK' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/users/{userId}/reviews:
+    get:
+      tags: [Reviews]
+      summary: What has been said about somebody, newest first
+      description: >-
+        Readable by any signed-in caller and by no anonymous one. This is the
+        screen a requester reads before handing a stranger several hundred baht,
+        so restricting it to the subject would defeat the point, while publishing
+        it would turn the membership into a scraped directory. The rating above
+        the list is the person's whole standing, not this page's, and is
+        unaffected by the role filter.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/UserID' }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: role, in: query, description: 'REQUESTER is reviews left by requesters, i.e. how this person is rated as a runner. Omitted is both.', schema: { $ref: '#/components/schemas/ReviewerRole' } }
+      responses: { '200': { $ref: '#/components/responses/UserReviewsOK' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/users/{userId}/reputation:
+    get:
+      tags: [Reviews]
+      summary: Somebody's star, and the finished errands behind it
+      description: >-
+        Computed on every read rather than stored: the average comes from the
+        reviews themselves, and the four counts are counted in the database over
+        the account's whole life. Nothing here can drift from the rows behind it.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/UserID' } ]
+      responses: { '200': { $ref: '#/components/responses/ReputationOK' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/me/reputation:
+    get:
+      tags: [Reviews]
+      summary: The caller's own standing
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/ReputationOK' }, '401': { $ref: '#/components/responses/Error' } }
+  /api/v1/media/policies:
+    get:
+      tags: [Media]
+      summary: Upload limits enforced by the server, per purpose
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/MediaPoliciesOK' }, '401': { $ref: '#/components/responses/Error' } }
+  /api/v1/media/upload-sessions:
+    post:
+      tags: [Media]
+      summary: Open a presigned direct upload to object storage
+      description: >-
+        The signature covers the declared content type and byte size, so the URL
+        accepts only the declared file. Send the returned headers unchanged on
+        the PUT. Media stays PENDING until it is confirmed.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateUploadSessionRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/UploadSessionCreated' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/media/{mediaId}/complete:
+    post:
+      tags: [Media]
+      summary: Confirm an upload after the object reached storage
+      description: >-
+        Re-validates the stored object against the purpose policy and deletes it
+        when it fails. Repeating the call on ready media succeeds unchanged.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/MediaID' } ]
+      responses: { '200': { $ref: '#/components/responses/MediaOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/media/{mediaId}/view-url:
+    get:
+      tags: [Media]
+      summary: Read URL for confirmed media the caller uploaded
+      description: >-
+        Answers the uploader alone, public purposes included: the URL may be
+        public but the enumeration of media ids is not. The purpose decides the
+        kind of URL — a durable image-CDN delivery URL for HOME_BANNER and
+        STORE_IMAGE where one is configured, otherwise a short-lived signature
+        over the private object. expiresAt is absent in the first case.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/MediaID' } ]
+      responses: { '200': { $ref: '#/components/responses/MediaViewURLOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/app-settings:
+    get:
+      tags: [App settings]
+      summary: The platform's configuration, readable without a session
+      description: >-
+        Deliberately unauthenticated, and outside the maintenance gate. A client
+        that cannot sign in — the platform is in maintenance, or registration is
+        closed — is the one that most needs to read this, and it has no token to
+        ask with; it is also how a client learns that maintenance has ended. The
+        user cap is omitted: no screen renders it. A database with no settings
+        document answers with the built-in defaults rather than an error.
+      responses: { '200': { $ref: '#/components/responses/PublicAppSettingsOK' } }
+  /api/v1/admin/app-settings:
+    get:
+      tags: [App settings]
+      summary: The full configuration (administrators only)
+      description: >-
+        Adds the registration cap and the current member count it has to be
+        chosen against, plus when the configuration last changed.
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/AppSettingsOK' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+    put:
+      tags: [App settings]
+      summary: Replace the configuration (administrators only)
+      description: >-
+        One form, submitted whole. A partial update would have to separate
+        "leave the support phone alone" from "clear it", which JSON cannot do.
+        A rejected configuration never reaches storage, so the platform keeps
+        running on the last valid one; the error code names the field.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveAppSettingsRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/AppSettingsOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/zones:
+    get:
+      tags: [Service areas]
+      summary: Where the platform operates, readable without a session
+      description: >-
+        The zones in service — the disabled ones are absent — and whether they
+        are being applied. Unauthenticated for the same reason as /app-settings:
+        a client that says "we do not serve this area yet" has to be able to say
+        so before anybody signs in.
+      responses: { '200': { $ref: '#/components/responses/ZoneListOK' } }
+  /api/v1/admin/zones:
+    get:
+      tags: [Service areas]
+      summary: Every zone, including the paused ones (administrators only)
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/ZoneListOK' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Service areas]
+      summary: Draw a zone (administrators only)
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveZoneRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/ZoneOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/zones/{zoneId}:
+    put:
+      tags: [Service areas]
+      summary: Redraw a zone (administrators only)
+      description: >-
+        A full replacement: a redrawn boundary is a new list of vertices, and
+        there is no sensible way to merge one list into another.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/ZoneID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveZoneRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/ZoneOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+    delete:
+      tags: [Service areas]
+      summary: Remove a zone (administrators only)
+      description: >-
+        Deleting the last zone does not fail. An empty set covers everywhere,
+        which is the state the platform starts in; pausing an area instead of
+        losing its outline is what `enabled` is for.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/ZoneID' } ]
+      responses: { '200': { description: Deleted, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/home-banners/active:
+    get:
+      tags: [Home banners]
+      summary: The home carousel as it should be shown right now
+      description: >-
+        Enabled banners inside their schedule window, highest priority first and
+        newest among equals. A slide whose artwork could not be resolved is
+        absent. How long an imageUrl lasts depends on how the deployment serves
+        HOME_BANNER: with the image CDN configured it is a durable delivery URL
+        and imageUrlExpiresAt is absent, so it may be cached and no refresh is
+        needed; without one it is presigned into private storage and must be
+        re-fetched before imageUrlExpiresAt.
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/HomeBannerListOK' }, '401': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/home-banners:
+    get:
+      tags: [Home banners]
+      summary: Every banner, including disabled and expired (administrators only)
+      description: >-
+        imageUrl is empty when the artwork cannot be signed, which is how a
+        broken banner is found. Authorization is decided in the use case, so a
+        non-administrator gets 403 rather than an empty list.
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/HomeBannerListOK' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Home banners]
+      summary: Publish a banner (administrators only)
+      description: imageMediaId must be a READY HOME_BANNER upload.
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveHomeBannerRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/HomeBannerOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/home-banners/{bannerId}:
+    put:
+      tags: [Home banners]
+      summary: Replace a banner (administrators only)
+      description: >-
+        A full replacement rather than a patch: linkHref, startAt and endAt are
+        nullable, and JSON cannot separate "leave it alone" from "clear it".
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/BannerID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveHomeBannerRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/HomeBannerOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+    delete:
+      tags: [Home banners]
+      summary: Remove a banner (administrators only)
+      description: The uploaded artwork is left in object storage.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/BannerID' } ]
+      responses: { '200': { description: Deleted, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/stores:
+    get:
+      tags: [Stores]
+      summary: The shops a requester can pick from
+      description: >-
+        Active stores only, and never an error a form has to render: a
+        coordinate that is half-given or impossible is dropped rather than
+        refused, because the picker behind this call still has to show
+        something to choose from. With lat and lng the answer is nearest-first
+        and each item carries distanceMeters; without them it is alphabetical
+        and carries none. The server caps limit at 50 and radiusMeters at
+        50000, so neither is negotiated by the client.
+
+
+        tripId asks the other question: the shops within 2km of one end of that
+        trip, anchored on the server's own copy of it and overriding lat, lng
+        and radiusMeters. anchor picks which end — origin, or destination when
+        omitted or unrecognised. It exists because a requester is never told
+        where a trip starts: /api/v1/trips/nearby publishes the destination
+        exactly but rounds the origin to roughly a kilometre. This is
+        recommendation only — an order may name a shop anywhere, and nothing
+        here limits what POST /api/v1/trips/{tripId}/orders will accept.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Matches the shop name or its branch, anywhere, case-insensitively }
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/StoreCategory' }, description: An unrecognised value is ignored rather than matched against nothing }
+        - { name: lat, in: query, schema: { type: number } }
+        - { name: lng, in: query, schema: { type: number } }
+        - { name: radiusMeters, in: query, schema: { type: integer, minimum: 1, maximum: 50000, default: 5000 } }
+        - { name: north, in: query, schema: { type: number }, description: Map viewport north edge. Send all four viewport edges to receive active registered stores only inside the visible box. }
+        - { name: south, in: query, schema: { type: number } }
+        - { name: east, in: query, schema: { type: number } }
+        - { name: west, in: query, schema: { type: number } }
+        - { name: tripId, in: query, schema: { type: string, format: objectid }, description: 'Anchors the search on one end of this trip at a fixed 2km radius. 404 for a trip that does not exist; an empty list for one with no coordinate on the chosen end.' }
+        - { name: anchor, in: query, schema: { type: string, enum: [origin, destination], default: destination }, description: 'Which end of tripId to search around. Ignored without tripId.' }
+        - { name: recommended, in: query, schema: { type: boolean, default: false }, description: 'The curated "ร้านแนะนำ" list: the branches of the Brands an administrator marked isRecommended, and nothing else. A shop with no Brand never qualifies. q, category, the viewport and tripId narrow this set further and can never widen it; an empty list means nothing is curated rather than nothing exists.' }
+        - { name: homeRecommended, in: query, schema: { type: boolean, default: false }, description: 'Home''s "ร้านค้าแนะนำใกล้ฉัน" row: the ACTIVE internally-maintained shops carrying Store.isHomeRecommended, within 2 km of lat/lng, nearest first. A whole mode rather than a filter — lat and lng are required and must be real degrees, radiusMeters may only be 2000 or omitted, and tripId, anchor, the viewport and recommended=true are all refused with 400 rather than resolved by precedence. Unrelated to recommended above: that one is a list of chains, this is a list of shops. Default limit 20. An empty list is the truthful answer for somebody standing nowhere near a chosen shop.' }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/StoreListOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' } }
+  /api/v1/stores/branches:
+    get:
+      tags: [Stores]
+      summary: One chain's branches, and which of them to offer
+      description: >-
+        A Brand is not somewhere a runner can be sent, so tapping one in
+        "ร้านแนะนำ" has to become a Store before it becomes an errand — and
+        which of eight 7-Elevens is a question most requesters have no opinion
+        about. This answers it: the chain's active branches, nearest the errand
+        first, with selectedStoreId naming the one a form should open holding.
+        It is always the first item, and it is sent anyway so a client never
+        keeps a second copy of the rule.
+
+
+        The rule is score(branch) = the distance to whichever anchor is nearer;
+        lowest wins, an equal score keeps the catalogue's own alphabetical
+        order, and a branch with no coordinate never beats one that can be
+        measured. tripId is how the anchor is given whenever the request is
+        being written against somebody's journey — both ends are read from the
+        server's own copy, which is the only way the origin can be used at all,
+        since /api/v1/trips/nearby rounds it to roughly a kilometre. lat and lng
+        are the fallback for an errand with no trip: the point it is being
+        collected at. Neither given still answers, in catalogue order and with
+        no distanceMeters on any row.
+
+
+        Recommendation only, exactly like GET /api/v1/stores. Every branch
+        listed may be picked, and nothing here limits what order creation will
+        accept.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: brandId, in: query, required: true, schema: { type: string, format: objectid }, description: 'The chain to answer about. 404 for a Brand that does not exist.' }
+        - { name: tripId, in: query, schema: { type: string, format: objectid }, description: 'Ranks the branches against both ends of this trip. Overrides lat and lng. 404 for a trip that does not exist; an end with no coordinate is simply not measured against.' }
+        - { name: lat, in: query, schema: { type: number }, description: 'Ranks the branches against one point — the pickup location, or where the requester is standing. Ignored beside tripId, and ignored unless lng is given too.' }
+        - { name: lng, in: query, schema: { type: number } }
+        - { name: q, in: query, schema: { type: string }, description: Narrows the chain the same way it narrows the catalogue }
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/StoreCategory' } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+      responses: { '200': { $ref: '#/components/responses/BrandBranchListOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/stores/{storeId}:
+    get:
+      tags: [Stores]
+      summary: One shop by id
+      description: >-
+        Retired stores are returned too. An order placed last week may still
+        name one, and refusing to describe it would leave a client holding an
+        id it cannot render.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+      responses: { '200': { $ref: '#/components/responses/StoreOK' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/stores/{storeId}/recommended-products:
+    get:
+      tags: [Stores]
+      summary: The pick list to offer for one chosen shop
+      description: >-
+        "สินค้าแนะนำ" for the shop a requester has selected on the ฝากซื้อ form:
+        the active rows of that shop's own Store.recommendedProducts, and
+        nothing else. A branch that has curated none answers with an empty list
+        even when other branches of its chain have menus — the offer is about
+        the shop the runner is being sent to, and another branch's product at
+        another branch's price is a claim about this one that nobody made.
+
+
+        An empty list is an ordinary answer, not an error: this is a shortcut
+        for filling the item rows, and the form still accepts anything typed
+        into them. The client draws no section at all for it.
+
+
+        A read of its own rather than a field on GET /api/v1/stores/{storeId},
+        because pick photographs are signed here — like the menu is on the
+        single-store read and unlike on the picker's search, which would pay for
+        fifty shops' pictures on every page.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+      responses: { '200': { $ref: '#/components/responses/StoreRecommendedProductListOK' }, '401': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/stores/promotions:
+    get: { tags: [Stores], summary: Published active store-authored promotion content, description: 'Discovery only; this is not a FarkNoi Campaign or discount entitlement.', security: [{ bearerAuth: [] }], responses: { '200': { $ref: '#/components/responses/StoreListOK' }, '401': { $ref: '#/components/responses/Error' } } }
+  /api/v1/admin/trips:
+    get:
+      tags: [Trips]
+      summary: Every runner's trips (administrators only)
+      description: >-
+        The console's trip board. Unlike GET /api/v1/trips, which answers about
+        the caller's own trips, this one is platform-wide — and it carries the
+        precise origin and destination rather than the rounded route the
+        requester feed uses, because it is the screen where somebody answers
+        "where is this runner meant to be".
+
+
+        `status=LIVE` is OPEN and IN_PROGRESS together: the trips somebody may
+        still be relying on, which is what "ทริปที่กำลังรับงานอยู่" asks. An
+        unrecognised status is refused with 400 rather than ignored, so a typo
+        cannot quietly widen the list.
+
+
+        `statusCounts` is counted over every trip on the platform and is
+        deliberately unaffected by the page or the status filter — it is what
+        the console draws its tabs from. Read-only: there is no administrative
+        route that starts, completes or cancels somebody else's trip.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [LIVE, OPEN, IN_PROGRESS, COMPLETED, CANCELLED] }, description: 'Omit for every trip ever announced' }
+        - { name: runnerId, in: query, schema: { type: string, format: objectid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/AdminTripPageOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/orders:
+    get:
+      tags: [Orders]
+      summary: Every errand on the platform (administrators only)
+      description: >-
+        The console's order list, and the answer to "what statuses are the
+        orders in right now". The rows are the same Order shape the two parties
+        read — proof images aside, which are signed per read and left out of
+        every list.
+
+
+        `status=LIVE` is the six statuses in which an errand is still an
+        obligation between two people: REQUESTED, ACCEPTED, PURCHASING,
+        PURCHASED, DELIVERING, DELIVERED. An unrecognised status is refused with
+        400.
+
+
+        `statusCounts` ignores the status filter so the console's tabs keep
+        their numbers when one is selected, but it *does* follow `tripId` —
+        "what is happening on this trip" is a different question rather than a
+        page of the same one. Read-only: an administrator watching a delivery
+        cannot accept, cancel or complete it for either party. Where they do
+        intervene is the money, at /api/v1/admin/order-earnings and
+        /api/v1/admin/credit-reservations.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [LIVE, REQUESTED, ACCEPTED, PURCHASING, PURCHASED, DELIVERING, DELIVERED, COMPLETED, REJECTED, CANCELLED] }, description: 'Omit for every order ever placed' }
+        - { name: tripId, in: query, schema: { type: string, format: objectid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/AdminOrderPageOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/stores:
+    get:
+      tags: [Stores]
+      summary: Every store, including the retired ones (administrators only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/StoreStatus' } }
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/StoreCategory' } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses: { '200': { $ref: '#/components/responses/StorePageOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+    post:
+      tags: [Stores]
+      summary: Add a store (administrators only)
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveStoreRequest' } } } }
+      responses: { '201': { $ref: '#/components/responses/StoreOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/stores/{storeId}:
+    put:
+      tags: [Stores]
+      summary: Replace a store (administrators only)
+      description: >-
+        A full replacement rather than a patch: a shop that moved changes its
+        coordinate and its address together, and an omitted branch is a cleared
+        branch.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaveStoreRequest' } } } }
+      responses: { '200': { $ref: '#/components/responses/StoreOK' }, '400': { $ref: '#/components/responses/ValidationError' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+    delete:
+      tags: [Stores]
+      summary: Remove a store (administrators only)
+      description: >-
+        Only stops the shop being offered. Orders that named it keep their own
+        copy, so nothing already placed changes; a shop that is closed for the
+        season should be set INACTIVE instead, which keeps its coordinate.
+      security: [{ bearerAuth: [] }]
+      parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+      responses: { '200': { description: Deleted, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '404': { $ref: '#/components/responses/Error' } }
+  /api/v1/admin/api-usage:
+    get:
+      tags: [API usage]
+      summary: Recent API traffic, aggregated (administrators only)
+      description: >-
+        What the API has been asked to do lately: totals, one row per route and
+        method with the statuses it answered, and one point per hour. It is
+        counted in Redis as hourly counters rather than logged per request, so
+        there is no endpoint here that returns an individual call — and nothing
+        identifying a caller is collected at all. Answers 503
+        API_USAGE_UNAVAILABLE where no Redis is configured.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: hours, in: query, description: 'Window length, clamped to 1..168 (default 24).', schema: { type: integer, minimum: 1, maximum: 168, default: 24 } }
+      responses: { '200': { $ref: '#/components/responses/APIUsageOK' }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' }, '503': { $ref: '#/components/responses/Error' } }
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT } }
+  parameters:
+    TripID: { name: tripId, in: path, required: true, schema: { type: string, format: objectid } }
+    OrderID: { name: orderId, in: path, required: true, schema: { type: string, format: objectid } }
+    MediaID: { name: mediaId, in: path, required: true, schema: { type: string, format: objectid } }
+    ZoneID: { name: zoneId, in: path, required: true, schema: { type: string, format: objectid } }
+    BannerID: { name: bannerId, in: path, required: true, schema: { type: string, format: objectid } }
+    StoreID: { name: storeId, in: path, required: true, schema: { type: string, format: objectid } }
+    UserID: { name: userId, in: path, required: true, schema: { type: string, format: objectid } }
+    IssueReportID: { name: reportId, in: path, required: true, schema: { type: string, format: objectid } }
+  schemas:
+    RegisterRequest: { type: object, required: [name, email, phone, password, otpToken], properties: { name: {type: string}, email: {type: string, format: email}, phone: {type: string}, password: {type: string, minLength: 6}, otpToken: {type: string, description: 'The token POST /auth/signup/otp/verify returned for this exact, normalized email. Register re-checks it against the store rather than trusting the client — see EMAIL_NOT_VERIFIED'}, acceptedTermsVersion: {type: string, description: Required when a current Terms document requires acceptance}, acknowledgedPrivacyVersion: {type: string, description: Required when a current Privacy Policy requires acknowledgment}, locale: {type: string, default: th-TH}, marketingConsent: {type: boolean, default: false, description: Optional and false unless explicitly selected} } }
+    SendSignupOTPRequest: { type: object, required: [email], properties: { email: {type: string, format: email} } }
+    VerifySignupOTPRequest: { type: object, required: [email, code], properties: { email: {type: string, format: email}, code: {type: string, description: The six-digit code that was mailed} } }
+    VerifySignupOTPResult: { type: object, properties: { otpToken: {type: string, description: Pass this back as otpToken on POST /auth/register} } }
+    LoginRequest: { type: object, required: [email, password], properties: { email: {type: string, format: email}, password: {type: string} } }
+    GoogleLoginRequest: { type: object, properties: { id_token: {type: string}, credential: {type: string} }, anyOf: [{required: [id_token]}, {required: [credential]}] }
+    RefreshRequest: { type: object, required: [refreshToken], properties: { refreshToken: {type: string} } }
+    AuthResult: { type: object, properties: { accessToken: {type: string}, refreshToken: {type: string}, user: {$ref: '#/components/schemas/PublicUser'} } }
+    PublicUser: { type: object, properties: { id: {type: string, format: objectid}, email: {type: string, format: email}, displayName: {type: string}, avatarUrl: {type: string, format: uri, description: Resolved at read time; short-lived when the picture was uploaded}, role: {$ref: '#/components/schemas/UserRole'} } }
+    Profile: { type: object, properties: { id: {type: string, format: objectid}, email: {type: string, format: email}, phone: {type: string}, displayName: {type: string}, avatarUrl: {type: string, format: uri, description: Resolved at read time; short-lived when the picture was uploaded}, status: {type: string, enum: [ACTIVE, SUSPENDED, DELETED]}, role: {$ref: '#/components/schemas/UserRole'}, promptPayId: {type: string, description: 'Bare digits: a 10-digit mobile number or a 13-digit national id. Absent when the user has set no payment account. Returned in full only here, to its owner'} } }
+    UserRole: { type: string, enum: [USER, ADMIN], description: Granted directly in the database; there is no endpoint that promotes an account }
+    AccountStatus: { type: string, enum: [ACTIVE, SUSPENDED, DELETED], description: Whether the account may be signed into at all }
+    AdminUser: { type: object, properties: { id: {type: string, format: objectid}, email: {type: string, format: email}, phone: {type: string}, displayName: {type: string}, avatarUrl: {type: string, format: uri, description: Resolved at read time; short-lived when the picture was uploaded}, status: {$ref: '#/components/schemas/AccountStatus'}, role: {$ref: '#/components/schemas/UserRole'}, hasPassword: {type: boolean, description: Whether the account has a password login at all}, hasGoogleLogin: {type: boolean}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    AdminUserPage: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/AdminUser'}}, page: {type: integer}, limit: {type: integer}, total: {type: integer, format: int64} } }
+    ResetPasswordRequest: { type: object, required: [password], properties: { password: {type: string, minLength: 6, maxLength: 72, description: 'The floor matches registration; the ceiling is bcrypt''s own limit'} } }
+    UpdateUserStatusRequest: { type: object, required: [status], properties: { status: {$ref: '#/components/schemas/AccountStatus'} } }
+    UpdateProfileRequest: { type: object, properties: { displayName: {type: string, minLength: 1, maxLength: 80}, avatarMediaId: {type: string, format: objectid, description: A READY PROFILE_IMAGE media owned by the caller}, removeAvatar: {type: boolean}, promptPayId: {type: string, description: A mobile number or national id, separators allowed. An empty string removes the payment account} } }
+    TripLocation: { type: object, required: [name, latitude, longitude], properties: { name: {type: string}, address: {type: string}, latitude: {type: number}, longitude: {type: number}, placeId: {type: string} } }
+    PublicTripMapPoint: { type: object, required: [latitude, longitude], properties: { latitude: {type: number}, longitude: {type: number}, precisionMeters: {type: integer, minimum: 0, description: Approximation radius; omitted for an exact point} } }
+    PublicTripRoute: { type: object, required: [origin, destination], properties: { origin: {$ref: '#/components/schemas/PublicTripMapPoint'}, destination: {$ref: '#/components/schemas/PublicTripMapPoint'} } }
+    PublicTripLocation: { type: object, required: [name], description: 'A public endpoint name and optional directions. It never includes an address or coordinates.', properties: { name: {type: string}, note: {type: string, maxLength: 200, description: Optional directions written by the runner for this endpoint} } }
+    NearbyTrip: { type: object, required: [id, origin, destination, route, departureAt, status, distanceFromMeMeters, matchType, maxOrders, activeOrderCount, availableSlots], properties: { id: {type: string, format: objectid}, origin: {$ref: '#/components/schemas/PublicTripLocation'}, destination: {$ref: '#/components/schemas/PublicTripLocation'}, route: {$ref: '#/components/schemas/PublicTripRoute'}, departureAt: {type: string, format: date-time}, status: {type: string, enum: [OPEN, IN_PROGRESS, COMPLETED, CANCELLED]}, distanceFromMeMeters: {type: integer, description: 'Metres from lat/lng to the end of the trip named by matchType'}, matchType: {$ref: '#/components/schemas/TripMatchType'}, maxOrders: {type: integer}, activeOrderCount: {type: integer}, availableSlots: {type: integer}, pricing: {$ref: '#/components/schemas/TripPricing'}, note: {type: string, description: 'The runner''s own terms for whoever asks them for something — written to the requester and readable before they ask. The trip''s note, not either pin''s: origin.note and destination.note describe the last thirty metres of one stop. Free text about the errand; it carries no location data. Absent when the runner wrote none.'}, runner: {allOf: [{$ref: '#/components/schemas/UserSummary'}], description: 'Who is making the journey, and how they are rated. The one identity this feed publishes — it discloses nothing about where the runner is, since the origin stays an area name and route.origin stays rounded to about a kilometre. Absent when the directory lookup was unavailable.'} } }
+    TripMatchType: { type: string, enum: [near_origin, near_destination], description: 'Why the trip was offered: the runner sets off near the caller, or arrives near them. Additive — clients that ignore it read the list unchanged, and the enum may gain values as more matching rules are added' }
+    NearbyTripPage: { type: object, required: [items, stores, scope, radiusKm, total], properties: { items: {type: array, items: {$ref: '#/components/schemas/NearbyTrip'}}, stores: {type: array, description: Active catalogue stores and OSM 7-Eleven locations within the fixed 2 km store radius, items: {$ref: '#/components/schemas/CatalogueStore'}}, scope: {type: string, enum: [RADIUS, PROVINCE], description: Which feed answered}, radiusKm: {type: integer, description: 7 in RADIUS scope and 0 in PROVINCE scope, where nothing measured a radius; it never changes the fixed 2 km store radius}, area: {type: object, nullable: true, description: The province a PROVINCE-scoped feed covered; null in RADIUS scope, properties: {name: {type: string}}}, total: {type: integer, description: Number of trip items, unchanged by stores} } }
+    CreateTripRequest: { type: object, required: [origin, destination, departureAt], properties: { origin: {$ref: '#/components/schemas/TripLocation'}, destination: {$ref: '#/components/schemas/TripLocation'}, departureAt: {type: string, format: date-time}, maxOrders: {type: integer, minimum: 1, maximum: 10}, note: {type: string, maxLength: 300}, pricing: {$ref: '#/components/schemas/TripPricingRequest'} } }
+    Store: { type: object, required: [name, latitude, longitude], description: 'The shop an order is for. storeId is set only when it was picked from the catalogue, and the server then reads the name, address and coordinate back from its own record — the fields below still travel so a pinned store and a picked one are described in one shape', properties: { storeId: {type: string, format: objectid, description: 'A CatalogueStore id. 422 STORE_UNAVAILABLE when it is unknown or the store is INACTIVE'}, name: {type: string}, address: {type: string}, latitude: {type: number}, longitude: {type: number}, placeId: {type: string} } }
+    StoreCategory: { type: string, enum: [FOOD, DRINK, CONVENIENCE, HEALTH_BEAUTY, OTHER] }
+    StoreStatus: { type: string, enum: [ACTIVE, INACTIVE], description: An INACTIVE store keeps its coordinate but is not offered in the picker }
+    CatalogueStore: { type: object, description: A shop the platform keeps on file. Coordinates are plain degrees; the GeoJSON pair the database stores never leaves persistence, properties: { id: {type: string, format: objectid}, name: {type: string}, branchName: {type: string, description: Tells two branches of one chain apart}, description: {type: string}, category: {$ref: '#/components/schemas/StoreCategory'}, brand: {type: string}, status: {$ref: '#/components/schemas/StoreStatus'}, address: {type: string}, source: {type: string, enum: [internal, osm]}, sourceId: {type: string, description: Stable identity within source when available}, latitude: {type: number}, longitude: {type: number}, distanceMeters: {type: integer, description: 'Present only when the search carried a coordinate — absent means "not measured", not zero metres away'}, isHomeRecommended: {type: boolean, default: false, description: 'Whether an administrator put this shop on Home''s "ร้านค้าแนะนำใกล้ฉัน" row. Always sent, so a client can tell "not recommended" from a server build that predates the flag. The only per-shop recommendation: the curated "ร้านแนะนำ" list is still a list of chains, read from the Brand'}, imageMediaId: {type: string, format: objectid, description: The shopfront photograph as a STORE_IMAGE media id. Absent when the shop has none}, imageUrl: {type: string, description: 'A durable image-CDN delivery URL where one is configured, otherwise signed at read time and short-lived — see imageUrlExpiresAt. Empty when there is no picture and when one could not be resolved, which a client draws the same way'}, imageUrlExpiresAt: {type: string, format: date-time, description: 'Absent for a delivery URL, which does not expire'}, recommendedProducts: {type: array, maxItems: 30, description: 'The priced pick list a requester taps instead of typing a row — active and inactive alike, so the console can manage the switch. Names and prices travel on every read; the photographs are signed only by the reads about one shop', items: {$ref: '#/components/schemas/StoreRecommendedProduct'}}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    StoreList: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/CatalogueStore'}} } }
+    StorePage: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/CatalogueStore'}}, page: {type: integer}, limit: {type: integer}, total: {type: integer, format: int64} } }
+    BrandBranchList: { type: object, description: 'One chain''s branches, nearest the errand first, and the one to open a form holding. selectedStoreId is always items[0] and is sent anyway, so the rule that chose it stays on one side.', properties: { selectedStoreId: {type: string, format: objectid, description: 'Absent only when the chain has no branch to offer'}, items: {type: array, items: {$ref: '#/components/schemas/CatalogueStore'}} } }
+    SaveStoreRequest: { type: object, required: [name, category, latitude, longitude], properties: { name: {type: string, minLength: 1, maxLength: 150}, branchName: {type: string, maxLength: 100}, description: {type: string, maxLength: 500}, category: {$ref: '#/components/schemas/StoreCategory'}, brand: {type: string, maxLength: 100}, brandId: {type: string, format: objectid, nullable: true, description: 'Optional managed Brand. Null unassigns it without changing the Store image; an unknown id returns 404 BRAND_NOT_FOUND'}, status: {$ref: '#/components/schemas/StoreStatus', default: ACTIVE}, address: {type: string, maxLength: 500}, latitude: {type: number, minimum: -90, maximum: 90}, longitude: {type: number, minimum: -180, maximum: 180}, imageMediaId: {type: string, format: objectid, nullable: true, description: 'A confirmed STORE_IMAGE upload. Null clears the shopfront photograph; 422 STORE_IMAGE_INVALID when the media is unknown, unconfirmed or was uploaded for something else'}, recommendedProducts: {type: array, maxItems: 30, description: 'The whole pick list every time. An empty array clears it; omitting the key entirely leaves the stored list alone, so a client that predates this field cannot wipe it', items: {$ref: '#/components/schemas/SaveStoreRecommendedProduct'}}, isHomeRecommended: {type: boolean, description: 'Puts this shop on Home''s "ร้านค้าแนะนำใกล้ฉัน" row. Omitted on a create is false; omitted on an update leaves the stored value alone, the same rule recommendedProducts follows; false switches it off. 422 VALIDATION_ERROR for a shop whose source is not internal — a discovered row is not somebody''s choice to recommend'} } }
+    StoreRecommendedProductList: { type: object, description: The picks one shop curated for itself, and nothing borrowed from its chain, properties: { storeId: {type: string, format: objectid}, items: {type: array, description: 'Active picks only. Empty for a shop that curated none, however full its sibling branches are', items: {$ref: '#/components/schemas/StoreRecommendedProduct'}} } }
+    StoreRecommendedProduct: { type: object, description: One priced pick a requester can add to a purchase request with a tap. priceMinor is satang, the unit every amount in this system is held in, properties: { id: {type: string, format: objectid}, name: {type: string, maxLength: 150}, priceMinor: {type: integer, minimum: 0}, imageMediaId: {type: string, format: objectid, description: The pick's photograph as a STORE_IMAGE media id. Handed back on the next save, which is how a pick keeps its picture through an edit}, imageUrl: {type: string, description: 'Signed at read time and short-lived. Empty on the picker search, which resolves shopfronts only'}, imageUrlExpiresAt: {type: string, format: date-time}, active: {type: boolean, description: The administrator's switch — a product taken off for a while is turned off rather than deleted} } }
+    SaveStoreRecommendedProduct: { type: object, required: [name], properties: { id: {type: string, format: objectid, description: Omitted for a new row and echoed back for an edit, so a replaced list keeps each row's identity}, name: {type: string, maxLength: 150}, priceMinor: {type: integer, minimum: 0, description: Satang}, imageMediaId: {type: string, format: objectid, nullable: true, description: A confirmed STORE_IMAGE upload. Null clears the picture}, active: {type: boolean, default: true} } }
+    OrderItemInput: { type: object, required: [name, quantity], properties: { suggestedItemId: {type: string, format: objectid, nullable: true}, name: {type: string}, quantity: {type: integer, minimum: 1}, expectedPrice: {type: integer, format: int64, minimum: 0}, note: {type: string}, imageMediaId: {type: string, format: objectid, description: 'One confirmed ORDER_REFERENCE upload owned by the requester — the example picture for this row. Refused with ORDER_REFERENCE_INVALID when the media is unknown, unconfirmed, uploaded for something else or somebody else''s'} } }
+    OrderItem: { type: object, description: One shopping row as an order read answers with it, properties: { id: {type: string, format: objectid}, name: {type: string}, quantity: {type: integer}, expectedPrice: {type: integer, format: int64, description: 'Per piece, as the requester estimated it. Satang'}, actualPrice: {type: integer, format: int64, description: 'Per piece, as the runner paid it. Satang'}, note: {type: string}, imageMediaId: {type: string, format: objectid, description: 'The requester''s example picture for this row. Absent when they attached none'}, imageUrl: {type: string, description: 'Signed when the order is read and short-lived — see imageUrlExpiresAt. Present on a single order only, never on a list. Empty when it could not be signed, which a client draws the same way as no picture'}, imageUrlExpiresAt: {type: string, format: date-time} } }
+    DeliveryLocation: { type: object, required: [latitude, longitude], properties: { name: {type: string}, address: {type: string}, latitude: {type: number}, longitude: {type: number}, placeId: {type: string} } }
+    CreateOrderRequest: { type: object, required: [store, items, deliveryLocation, rewardAmount, maxItemBudget], properties: { store: {$ref: '#/components/schemas/Store'}, items: {type: array, minItems: 1, items: {$ref: '#/components/schemas/OrderItemInput'}}, deliveryLocation: {$ref: '#/components/schemas/DeliveryLocation'}, rewardAmount: {type: integer, format: int64, minimum: 0}, maxItemBudget: {type: integer, format: int64, minimum: 1}, note: {type: string, maxLength: 500} } }
+    RejectOrderRequest: { type: object, properties: { reason: {type: string, maxLength: 500} } }
+    CancelOrderRequest: { type: object, required: [reason], properties: { reason: {type: string, maxLength: 500} } }
+    PurchaseOrderRequest: { type: object, required: [items, proofMediaIds], properties: { items: {type: array, minItems: 1, items: {type: object, required: [orderItemId, actualPrice], properties: {orderItemId: {type: string, format: objectid}, actualPrice: {type: integer, format: int64, minimum: 0}}} }, proofMediaIds: {$ref: '#/components/schemas/ProofMediaIDs'} } }
+    DeliverOrderRequest: { type: object, required: [proofMediaIds, latitude, longitude], properties: { proofMediaIds: {$ref: '#/components/schemas/ProofMediaIDs'}, latitude: {type: number, format: double, minimum: -90, maximum: 90}, longitude: {type: number, format: double, minimum: -180, maximum: 180}, accuracy: {type: number, format: double, minimum: 0, description: "The device's own error bar in metres; see ArrivalLocation."} }, description: "The handover photographs and the runner's own coordinate in one request. The location half is ArrivalLocation, checked against the order's delivery point." }
+    StartPurchasingRequest: { $ref: '#/components/schemas/ArrivalLocation' }
+    ArrivalLocation:
+      type: object
+      required: [latitude, longitude]
+      description: >-
+        Where the runner's own device says it is, at the moment they pressed the
+        button. It is the only part of the arrival check the client is trusted
+        for: the coordinate it is measured against is read off the order, and a
+        store or delivery coordinate sent by a client is ignored everywhere.
+
+        Both steps this appears on are refused unless the distance to the
+        order's own coordinate is within the configured arrival radius (a
+        distance exactly equal to it passes) — see TOO_FAR_FROM_STORE and
+        TOO_FAR_FROM_DELIVERY_POINT, whose details carry the radius in force.
+        A refusal leaves the order's status untouched.
+
+        The radius is arrival.radiusMeters in the app settings, set by an
+        administrator; TRIP_ARRIVAL_RADIUS_METERS (10) is the default an
+        installation runs on until one is saved. It is not published on
+        GET /app-settings: a client is told the figure when it is refused, and
+        is not told it in advance.
+      properties:
+        latitude: { type: number, format: double, minimum: -90, maximum: 90 }
+        longitude: { type: number, format: double, minimum: -180, maximum: 180 }
+        accuracy:
+          type: number
+          format: double
+          minimum: 0
+          description: >-
+            The device's own error bar in metres — position.coords.accuracy in a
+            browser. Optional, and sent whenever the device offers it: it is
+            kept with the arrival record and screens out a fix too vague to place
+            anybody (LOCATION_ACCURACY_TOO_LOW, above
+            MAX_ALLOWED_GPS_ACCURACY_METERS). It never substitutes for the
+            distance rule.
+    ProofMediaIDs: { type: array, minItems: 1, maxItems: 5, description: 'Confirmed ORDER_PROOF uploads owned by the runner. Refused with ORDER_PROOF_INVALID otherwise; ORDER_PROOF_REQUIRED / ORDER_PROOF_TOO_MANY / ORDER_PROOF_DUPLICATE cover the shape.', items: {type: string, format: objectid} }
+    ProofImage: { type: object, description: 'Signed at read time and short-lived, so it must not be cached beyond the response carrying it. url is empty when the object could not be signed.', properties: { mediaId: {type: string, format: objectid}, url: {type: string, format: uri}, urlExpiresAt: {type: string, format: date-time} } }
+    OrderStatus: { type: string, enum: [WAITING_MATCH, REQUESTED, ACCEPTED, REJECTED, PURCHASING, PURCHASED, DELIVERING, DELIVERED, COMPLETED, CANCELLED, EXPIRED] }
+    CreateOpenOrderRequest: { type: object, required: [store, deliveryLocation, rewardAmount, expiresAt], description: 'Legacy item-list and maxItemBudget bodies remain accepted. The redesigned body uses productDescription and estimatedProductPrice; the server derives its Order item and authorised ceiling and calculates estimatedTotal.', properties: { store: {$ref: '#/components/schemas/Store'}, deliveryLocation: {$ref: '#/components/schemas/DeliveryLocation'}, rewardAmount: {type: integer, format: int64, minimum: 0}, note: {type: string, maxLength: 200}, expiresAt: {type: string, format: date-time}, productDescription: {type: string, minLength: 1, maxLength: 200}, estimatedProductPrice: {type: integer, format: int64, minimum: 1}, productImageMediaIds: {type: array, maxItems: 4, items: {type: string, format: objectid, description: 'Confirmed ORDER_REFERENCE upload owned by the requester'}}, items: {type: array, minItems: 1, items: {$ref: '#/components/schemas/OrderItemInput'}}, maxItemBudget: {type: integer, format: int64, minimum: 1} } }
+    TripPricingRequest: { type: object, description: 'Who names the ค่ารับฝาก on this trip. Omitted entirely by a client that predates traveller-defined pricing, which is REQUESTER_OFFER — the arrangement every trip was opened under until now. Under REQUESTER_OFFER the three traveller fields are ignored rather than refused, and are not stored. Amounts are satang, and the server re-validates every combination: TRAVELER_DEFINED requires a type, FLAT requires flatFee > 0, PER_ITEM requires pricePerItem > 0. Anything else is 422 TRIP_PRICING_INVALID.', properties: { mode: {type: string, enum: [REQUESTER_OFFER, TRAVELER_DEFINED], default: REQUESTER_OFFER}, type: {type: string, enum: [FLAT, PER_ITEM], description: 'Required under TRAVELER_DEFINED, meaningless otherwise'}, flatFee: {type: integer, format: int64, minimum: 1, description: 'The whole fee for one order, in satang. FLAT only.'}, pricePerItem: {type: integer, format: int64, minimum: 1, description: 'The fee per piece, in satang, multiplied by the order''s total item quantity. PER_ITEM only.'} } }
+    TripPricing: { type: object, required: [mode], description: 'A trip''s published ค่ารับฝาก terms. Always sent, including on a trip stored before this existed — an absent stored mode is resolved to REQUESTER_OFFER rather than left for a client to interpret. type, flatFee and pricePerItem appear only under TRAVELER_DEFINED: a REQUESTER_OFFER trip has no rate to publish, and a zero would read as "free" on the screen drawing it.', properties: { mode: {type: string, enum: [REQUESTER_OFFER, TRAVELER_DEFINED]}, type: {type: string, enum: [FLAT, PER_ITEM]}, flatFee: {type: integer, format: int64, description: Satang}, pricePerItem: {type: integer, format: int64, description: Satang} } }
+    OrderPricing: { type: object, required: [mode], description: 'The trip''s ค่ารับฝาก terms frozen onto one order at creation, so a traveller who re-prices their trip cannot change what an errand already agreed was agreed at. Absent means the requester named the figure themselves — every order placed before traveller-defined pricing existed, and every one placed on a trip that still lets them. rewardAmount on the order is the amount; this is the working behind it.', properties: { mode: {type: string, enum: [REQUESTER_OFFER, TRAVELER_DEFINED]}, type: {type: string, enum: [FLAT, PER_ITEM]}, flatFee: {type: integer, format: int64, description: Satang}, pricePerItem: {type: integer, format: int64, description: Satang}, totalQuantity: {type: integer, description: 'The pieces the per-piece rate was multiplied by, summed from the order''s own item snapshot. PER_ITEM only.'} } }
+    Trip: { type: object, properties: { id: {type: string, format: objectid}, runnerId: {type: string, format: objectid}, status: {type: string, enum: [OPEN, IN_PROGRESS, COMPLETED, CANCELLED]}, origin: {$ref: '#/components/schemas/TripLocation'}, destination: {$ref: '#/components/schemas/TripLocation'}, route: {$ref: '#/components/schemas/PublicTripRoute'}, departureAt: {type: string, format: date-time}, maxOrders: {type: integer}, acceptedOrders: {type: integer}, availableSlots: {type: integer}, note: {type: string}, pricing: {$ref: '#/components/schemas/TripPricing'}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    UserSummary: { type: object, description: 'Resolved at read time from the user record, never copied into the order — so a renamed person, and a rating that has moved, are current everywhere at once.', properties: { id: {type: string, format: objectid}, displayName: {type: string}, avatarUrl: {type: string, format: uri}, rating: {$ref: '#/components/schemas/Rating'} } }
+    Rating: { type: object, required: [averageRating, reviewCount, rated], description: 'The star beside a name. rated is what a client branches on: somebody nobody has reviewed comes back with averageRating 0 and rated false, which is not the same as a bad score and must never be drawn as one. The count always travels with the average, because 5.0 from one errand and 4.8 from forty read identically without it.', properties: { averageRating: {type: number, format: double, description: 'Rounded to one decimal place server-side, so every client shows the same number'}, reviewCount: {type: integer}, rated: {type: boolean} } }
+    ReviewerRole: { type: string, enum: [REQUESTER, RUNNER], description: 'Which side wrote the review. REQUESTER is somebody rating the person who ran their errand; RUNNER is the other way round.' }
+    CreateReviewRequest: { type: object, required: [rating], properties: { rating: {type: integer, minimum: 1, maximum: 5}, comment: {type: string, description: 'Optional. Trimmed, and a comment of blanks is stored as none; the ceiling is 500 runes, counted in runes so Thai is not cut off at a third of the words.'} } }
+    Review: { type: object, properties: { id: {type: string, format: objectid}, orderId: {type: string, format: objectid}, reviewer: {type: object, properties: {id: {type: string, format: objectid}, displayName: {type: string}, avatarUrl: {type: string, format: uri}}}, role: {$ref: '#/components/schemas/ReviewerRole'}, rating: {type: integer, minimum: 1, maximum: 5}, comment: {type: string}, createdAt: {type: string, format: date-time} } }
+    Pagination: { type: object, properties: { page: {type: integer}, limit: {type: integer}, total: {type: integer, format: int64} } }
+    IssueReportStatus: { type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED], description: 'OPEN and IN_PROGRESS are the two states a report is still somebody''s to work on; RESOLVED and CLOSED are terminal' }
+    CreateIssueReportRequest: { type: object, required: [detail, contactPhone], description: 'Carries no name: who is reporting comes from the token', properties: { detail: {type: string, minLength: 1, maxLength: 2000, description: The problem in the reporter's own words}, contactPhone: {type: string, maxLength: 32, description: 'The number to ring back. Spaces, dashes and brackets are dropped; a leading + is kept; 6 to 20 digits'} } }
+    ResolveIssueReportRequest: { type: object, required: [status], properties: { status: {type: string, enum: [IN_PROGRESS, RESOLVED, CLOSED]}, note: {type: string, maxLength: 1000, description: What was done. The reporter reads it, so it is the answer to their complaint rather than an internal remark} } }
+    IssueReport: { type: object, description: One report as its own author sees it, properties: { id: {type: string, format: objectid}, detail: {type: string}, contactPhone: {type: string}, status: {$ref: '#/components/schemas/IssueReportStatus'}, resolutionNote: {type: string}, createdAt: {type: string, format: date-time}, resolvedAt: {type: string, format: date-time} } }
+    AdminIssueReport: { allOf: [{$ref: '#/components/schemas/IssueReport'}, {type: object, description: 'The name and email are the snapshot taken when the report was written, not a lookup — a later rename cannot rewrite the history of a complaint', properties: {userId: {type: string, format: objectid}, reporterName: {type: string}, reporterEmail: {type: string, format: email}}}] }
+    IssueReportPage: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/IssueReport'}}, pagination: {$ref: '#/components/schemas/Pagination'} } }
+    AdminIssueReportPage: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/AdminIssueReport'}}, pagination: {$ref: '#/components/schemas/Pagination'} } }
+    OrderReviews: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/Review'}}, mine: {$ref: '#/components/schemas/Review'}, canReview: {type: boolean, description: 'True only while the caller is a participant of a COMPLETED errand who has not reviewed it yet'} } }
+    UserReviews: { type: object, properties: { rating: {$ref: '#/components/schemas/Rating'}, items: {type: array, items: {$ref: '#/components/schemas/Review'}}, page: {type: integer}, limit: {type: integer}, total: {type: integer, format: int64} } }
+    Reputation: { type: object, properties: { userId: {type: string, format: objectid}, rating: {$ref: '#/components/schemas/Rating'}, completedAsRunner: {type: integer}, completedAsRequester: {type: integer}, cancelledAsRunner: {type: integer}, cancelledAsRequester: {type: integer} } }
+    AdminTrip: { type: object, description: 'One row of the console''s trip board. Carries the precise origin and destination rather than the rounded route, and no route geometry — a list does not draw maps.', properties: { id: {type: string, format: objectid}, runner: {$ref: '#/components/schemas/UserSummary'}, status: {type: string, enum: [OPEN, IN_PROGRESS, COMPLETED, CANCELLED]}, origin: {$ref: '#/components/schemas/TripLocation'}, destination: {$ref: '#/components/schemas/TripLocation'}, departureAt: {type: string, format: date-time}, maxOrders: {type: integer}, acceptedOrders: {type: integer}, availableSlots: {type: integer}, note: {type: string}, pricing: {$ref: '#/components/schemas/TripPricing'}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    StatusCount: { type: object, description: One status and how many records currently sit in it. Every status is present, zeros included, in lifecycle order., properties: { status: {type: string}, count: {type: integer, format: int64} } }
+    AdminTripPage: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/AdminTrip'}}, statusCounts: {type: array, items: {$ref: '#/components/schemas/StatusCount'}}, page: {type: integer}, limit: {type: integer}, total: {type: integer, format: int64} } }
+    AdminOrderPage: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/Order'}}, statusCounts: {type: array, items: {$ref: '#/components/schemas/StatusCount'}}, page: {type: integer}, limit: {type: integer}, total: {type: integer, format: int64} } }
+    Order: { type: object, properties: { id: {type: string, format: objectid}, orderNumber: {type: string, description: 'Short human-readable identifier ("FN000123") minted when the order is accepted or claimed. Absent on a still-open request.'}, tripId: {type: string, format: objectid}, requester: {$ref: '#/components/schemas/UserSummary'}, runner: {$ref: '#/components/schemas/UserSummary'}, status: {$ref: '#/components/schemas/OrderStatus'}, rewardAmount: {type: integer, format: int64, description: 'The ค่ารับฝาก in satang. On a trip whose runner published a rate this is calculated by the server from that rate and the order''s own quantities; a rewardAmount in the request body is ignored there.'}, pricing: {$ref: '#/components/schemas/OrderPricing'}, estimatedProductPrice: {type: integer, format: int64, description: 'Server-authoritative authorised product estimate'}, estimatedTotal: {type: integer, format: int64, description: 'Server calculation: estimatedProductPrice + rewardAmount'}, productDescription: {type: string}, productImages: {type: array, description: 'Present on a single order response; signed requester reference images.', items: {$ref: '#/components/schemas/ProofImage'}}, itemTotalAmount: {type: integer, format: int64}, totalAmount: {type: integer, format: int64}, payment: {$ref: '#/components/schemas/OrderPayment'}, purchaseProof: {type: array, description: 'Present on a single order only, never on a list.', items: {$ref: '#/components/schemas/ProofImage'}}, deliveryProof: {type: array, description: 'Present on a single order only, never on a list.', items: {$ref: '#/components/schemas/ProofImage'}}, items: {type: array, items: {$ref: '#/components/schemas/OrderItem'}}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    OrderPayment: { type: object, description: 'Present only while the order is DELIVERED and the runner has a payment account — treat its presence as "ask for the money now". Absent before delivery, once COMPLETED, and for a runner who has set no account', properties: { method: {type: string, enum: [PROMPTPAY]}, promptPayId: {type: string, description: The runner's account, disclosed to the two parties of this order for as long as it is owed}, amount: {type: integer, format: int64, description: The order's own totalAmount, in satang} } }
+    MediaPurpose: { type: string, enum: [PROFILE_IMAGE, ORDER_PROOF, ORDER_REFERENCE, DISPUTE_EVIDENCE, KYC_ID_CARD, HOME_BANNER, STORE_IMAGE] }
+    MediaStatus: { type: string, enum: [PENDING, READY] }
+    CreateUploadSessionRequest: { type: object, required: [purpose, contentType, byteSize], properties: { purpose: {$ref: '#/components/schemas/MediaPurpose'}, contentType: {type: string, example: image/jpeg}, byteSize: {type: integer, format: int64, minimum: 1} } }
+    UploadSession: { type: object, properties: { mediaId: {type: string, format: objectid}, uploadUrl: {type: string, format: uri}, method: {type: string, enum: [PUT]}, headers: {type: object, additionalProperties: {type: string}, description: Signed headers the client must send unchanged}, expiresAt: {type: string, format: date-time} } }
+    Media: { type: object, properties: { mediaId: {type: string, format: objectid}, purpose: {$ref: '#/components/schemas/MediaPurpose'}, status: {$ref: '#/components/schemas/MediaStatus'}, contentType: {type: string}, byteSize: {type: integer, format: int64}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    MediaViewURL: { type: object, properties: { mediaId: {type: string, format: objectid}, url: {type: string, format: uri, description: 'Presigned into private storage, or a durable image-CDN delivery URL for the public purposes HOME_BANNER and STORE_IMAGE where one is configured'}, expiresAt: {type: string, format: date-time, description: Absent for a delivery URL, which does not expire} } }
+    MediaPolicyList: { type: object, properties: { items: {type: array, items: {type: object, properties: {purpose: {$ref: '#/components/schemas/MediaPurpose'}, maxByteSize: {type: integer, format: int64}, contentTypes: {type: array, items: {type: string}}}}} } }
+    ZonePoint: { type: object, required: [latitude, longitude], properties: { latitude: {type: number, minimum: -90, maximum: 90}, longitude: {type: number, minimum: -180, maximum: 180} } }
+    Zone: { type: object, properties: { id: {type: string, format: objectid}, name: {type: string}, enabled: {type: boolean, description: A paused zone keeps its outline but is not served}, polygon: {type: array, items: {$ref: '#/components/schemas/ZonePoint'}, description: The boundary in order; it closes itself}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    ZoneList: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/Zone'}}, enforced: {type: boolean, description: Whether the zones are applied as a rule; the same value app settings carries} } }
+    SaveZoneRequest: { type: object, required: [name, polygon], properties: { name: {type: string, minLength: 1, maxLength: 80}, enabled: {type: boolean, default: true}, polygon: {type: array, minItems: 3, maxItems: 500, items: {$ref: '#/components/schemas/ZonePoint'}, description: A repeated first point at the end is accepted and dropped} } }
+    CarouselSettings: { type: object, properties: { enabled: {type: boolean, description: Off hides the carousel without deleting any slide}, heightPx: {type: integer, minimum: 150, maximum: 170}, imageFit: {type: string, enum: [COVER, CONTAIN], description: COVER fills the box and crops; CONTAIN shows the whole image}, autoplaySeconds: {type: integer, minimum: 0, maximum: 60, description: 0 leaves advancing to the user} } }
+    PublicAppSettings: { type: object, properties: { appName: {type: string}, appDescription: {type: string}, supportEmail: {type: string}, supportPhone: {type: string}, defaultTimezone: {type: string, description: IANA name; every "ends today/tomorrow" deadline is computed in it}, maintenanceMode: {type: boolean, description: The platform is closed. Clients draw their maintenance screen from it and the API answers 503 MAINTENANCE_MODE to every member-facing route; administrators are exempt and /app-settings, /auth/* and the legal documents stay open}, registrationEnabled: {type: boolean}, serviceArea: {type: object, properties: {enforced: {type: boolean, description: Whether the drawn zones are applied}}}, homeCarousel: {$ref: '#/components/schemas/CarouselSettings'} } }
+    AppSettings: { type: object, properties: { appName: {type: string}, appDescription: {type: string}, supportEmail: {type: string}, supportPhone: {type: string}, defaultTimezone: {type: string}, maintenanceMode: {type: boolean}, registration: {type: object, properties: {enabled: {type: boolean}, maxUsers: {type: integer, description: 0 is unlimited; counts ordinary accounts only}, currentUsers: {type: integer, format: int64, description: Counted at read time}}}, serviceArea: {type: object, properties: {enforced: {type: boolean}}}, arrival: {type: object, properties: {radiusMeters: {type: integer, description: 'How close a runner must be to the shop or the delivery point to confirm they have arrived. Always the radius actually in force — an unsaved document reports the deployment default rather than 0'}}}, homeCarousel: {$ref: '#/components/schemas/CarouselSettings'}, updatedAt: {type: string, format: date-time} } }
+    SaveAppSettingsRequest: { type: object, required: [appName], properties: { appName: {type: string, minLength: 1, maxLength: 80}, appDescription: {type: string, maxLength: 500}, supportEmail: {type: string, format: email, description: Empty is allowed; a display name such as "Support <a@b.c>" is not}, supportPhone: {type: string, maxLength: 32}, defaultTimezone: {type: string, description: An IANA name the server can load; empty falls back to Asia/Bangkok}, maintenanceMode: {type: boolean}, registration: {type: object, properties: {enabled: {type: boolean}, maxUsers: {type: integer, minimum: 0}}}, serviceArea: {type: object, properties: {enforced: {type: boolean}}}, arrival: {type: object, properties: {radiusMeters: {type: integer, minimum: 5, maximum: 500, description: 'Omit to leave the configured radius alone; 0 is rejected (ARRIVAL_RADIUS_INVALID) rather than read as the default'}}}, homeCarousel: {$ref: '#/components/schemas/CarouselSettings'} } }
+    HomeBanner: { type: object, properties: { id: {type: string, format: objectid}, title: {type: string, description: Alternative text; the message itself is drawn inside the artwork}, imageMediaId: {type: string, format: objectid}, imageUrl: {type: string, format: uri, description: 'A durable image-CDN delivery URL where one is configured, otherwise presigned and short-lived. Empty when it could not be resolved'}, imageUrlExpiresAt: {type: string, format: date-time, description: 'Absent for a delivery URL, which does not expire — that absence is how a client tells the two read paths apart'}, linkHref: {type: string, description: An in-app path or an absolute http(s) URL}, startAt: {type: string, format: date-time}, endAt: {type: string, format: date-time}, enabled: {type: boolean}, priority: {type: integer, description: Highest first}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time} } }
+    HomeBannerList: { type: object, properties: { items: {type: array, items: {$ref: '#/components/schemas/HomeBanner'}} } }
+    SaveHomeBannerRequest: { type: object, required: [title, imageMediaId], properties: { title: {type: string, minLength: 1, maxLength: 120}, imageMediaId: {type: string, format: objectid, description: A READY HOME_BANNER media}, linkHref: {type: string, description: An in-app path starting with / or an absolute http(s) URL; anything else is rejected}, startAt: {type: string, format: date-time}, endAt: {type: string, format: date-time, description: Exclusive, and must be after startAt}, enabled: {type: boolean, default: true}, priority: {type: integer, default: 0} } }
+    APIUsageSummary: { type: object, properties: { windowHours: {type: integer}, from: {type: string, format: date-time}, to: {type: string, format: date-time}, retentionHours: {type: integer}, totals: {$ref: '#/components/schemas/APIUsageTotals'}, routes: {type: array, items: {$ref: '#/components/schemas/APIUsageRoute'}}, hours: {type: array, items: {$ref: '#/components/schemas/APIUsageHour'}} } }
+    APIUsageTotals: { type: object, properties: { requestCount: {type: integer, format: int64}, errorCount: {type: integer, format: int64}, serverErrorCount: {type: integer, format: int64}, totalDurationMs: {type: integer, format: int64}, averageDurationMs: {type: integer, format: int64}, routeCount: {type: integer} } }
+    APIUsageRoute: { type: object, properties: { route: {type: string, description: 'The router template, never a URL — /api/v1/trips/:tripId.'}, method: {type: string}, requestCount: {type: integer, format: int64}, errorCount: {type: integer, format: int64}, serverErrorCount: {type: integer, format: int64}, totalDurationMs: {type: integer, format: int64}, averageDurationMs: {type: integer, format: int64}, statuses: {type: array, items: {$ref: '#/components/schemas/APIUsageStatus'}} } }
+    APIUsageStatus: { type: object, properties: { statusCode: {type: integer}, requestCount: {type: integer, format: int64} } }
+    APIUsageHour: { type: object, properties: { bucketAt: {type: string, format: date-time}, requestCount: {type: integer, format: int64}, errorCount: {type: integer, format: int64}, serverErrorCount: {type: integer, format: int64}, averageDurationMs: {type: integer, format: int64} } }
+    Envelope: { type: object, required: [success, message], properties: { success: {type: boolean}, message: {type: string}, code: {type: string}, data: {} } }
+  responses:
+    SignupOTPSent: { description: 'Verification code sent — or silently skipped because the address already has an account; the response is identical either way to avoid account enumeration', content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    SignupOTPVerified: { description: Code verified, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/VerifySignupOTPResult'}}}]} } } }
+    ReviewCreated: { description: Review recorded, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    OrderReviewsOK: { description: Both sides' reviews of one errand, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    UserReviewsOK: { description: One page of what has been said about somebody, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    ReputationOK: { description: Somebody's rating and finished-errand counts, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    LegalDocumentsOK: { description: Published legal documents, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    LegalDocumentOK: { description: Published legal document, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    LegalStatusOK: { description: Current legal status for the caller, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    LegalAcceptancesOK: { description: Caller's legal acceptance history, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    LegalAcceptanceCreated: { description: Legal action recorded, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    PrivacyRequestCreated: { description: Personal-data request recorded, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    IssueReportCreated: { description: Issue report recorded, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/IssueReport'}}}]} } } }
+    IssueReportPageOK: { description: The caller's own issue reports, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/IssueReportPage'}}}]} } } }
+    AdminIssueReportOK: { description: Issue report, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminIssueReport'}}}]} } } }
+    AdminIssueReportPageOK: { description: The reported-problem queue, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminIssueReportPage'}}}]} } } }
+    HomeBannerOK: { description: Home banner, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/HomeBanner'}}}]} } } }
+    StoreOK: { description: Store, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/CatalogueStore'}}}]} } } }
+    StoreRecommendedProductListOK: { description: Recommended products, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/StoreRecommendedProductList'}}}]} } } }
+    StoreListOK: { description: Stores, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/StoreList'}}}]} } } }
+    StorePageOK: { description: Stores, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/StorePage'}}}]} } } }
+    BrandBranchListOK: { description: Branches, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/BrandBranchList'}}}]} } } }
+    AdminUserOK: { description: User, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminUser'}}}]} } } }
+    AdminUserPageOK: { description: Users, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminUserPage'}}}]} } } }
+    ZoneOK: { description: Service area, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/Zone'}}}]} } } }
+    ZoneListOK: { description: Service areas, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/ZoneList'}}}]} } } }
+    PublicAppSettingsOK: { description: App settings, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/PublicAppSettings'}}}]} } } }
+    AppSettingsOK: { description: App settings, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AppSettings'}}}]} } } }
+    HomeBannerListOK: { description: Home banners, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/HomeBannerList'}}}]} } } }
+    APIUsageOK: { description: API usage summary, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/APIUsageSummary'}}}]} } } }
+    Error: { description: Error response, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    ValidationError: { description: Invalid request, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    AuthCreated: { description: Registered, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AuthResult'}}}]} } } }
+    AuthOK: { description: Authenticated, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AuthResult'}}}]} } } }
+    ProfileOK: { description: Profile, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/Profile'}}}]} } } }
+    TripCreated: { description: Trip created, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    TripOK: { description: Trip, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/Trip'}}}]} } } }
+    TripListOK: { description: Trips, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    NearbyTripsOK: { description: Nearby trips, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/NearbyTripPage'}}}]} } } }
+    OrderOK: { description: Order, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/Order'}}}]} } } }
+    OrderListOK: { description: Orders, content: { application/json: { schema: {$ref: '#/components/schemas/Envelope'} } } }
+    AdminTripPageOK: { description: Trips, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminTripPage'}}}]} } } }
+    AdminOrderPageOK: { description: Orders, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/AdminOrderPage'}}}]} } } }
+    UploadSessionCreated: { description: Upload session, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/UploadSession'}}}]} } } }
+    MediaOK: { description: Media, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/Media'}}}]} } } }
+    MediaViewURLOK: { description: Media view url, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/MediaViewURL'}}}]} } } }
+    MediaPoliciesOK: { description: Media upload policies, content: { application/json: { schema: {allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, properties: {data: {$ref: '#/components/schemas/MediaPolicyList'}}}]} } } }

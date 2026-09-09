@@ -3,11 +3,37 @@ import 'package:equatable/equatable.dart';
 // ─── Trip Status ─────────────────────────────────────────────────────────────
 
 /// สถานะของทริป
+///
+/// Four of these are the API's own (`OPEN`, `IN_PROGRESS`, `COMPLETED`,
+/// `CANCELLED`); [delivering] is the app's alone. The server has no "I am back
+/// at the meeting point" state for a trip — that milestone lives per *order*,
+/// as `DELIVERING` — but the runner's screen needs it as one moment, because
+/// arriving is what they announce to everybody waiting at once. It is entered
+/// locally, and [MyTripEntity.arrivedAt] is when.
 enum TripStatus {
-  accepting,  // กำลังรับออเดอร์อยู่
-  shopping,   // ออกเดินทางแล้ว กำลังซื้อของ
-  delivering, // กลับมาแล้ว รอส่งของ
-  completed,  // จบงานแล้ว
+  accepting,  // กำลังรับออเดอร์อยู่          — OPEN
+  shopping,   // ออกเดินทางแล้ว กำลังซื้อของ  — IN_PROGRESS
+  delivering, // กลับมาแล้ว รอส่งของ          — IN_PROGRESS + arrivedAt
+  completed,  // จบงานแล้ว                    — COMPLETED
+  cancelled,  // ยกเลิกแล้ว                   — CANCELLED
+}
+
+/// The four values `TripResponse.status` can hold, read into [TripStatus].
+///
+/// `IN_PROGRESS` resolves to [TripStatus.shopping]; a trip only becomes
+/// [TripStatus.delivering] once its runner says so on this device.
+TripStatus tripStatusFromWire(String? wire) {
+  switch (wire) {
+    case 'IN_PROGRESS':
+      return TripStatus.shopping;
+    case 'COMPLETED':
+      return TripStatus.completed;
+    case 'CANCELLED':
+      return TripStatus.cancelled;
+    case 'OPEN':
+    default:
+      return TripStatus.accepting;
+  }
 }
 
 extension TripStatusLabel on TripStatus {
@@ -21,6 +47,8 @@ extension TripStatusLabel on TripStatus {
         return 'รอส่งมอบของ';
       case TripStatus.completed:
         return 'จบงานแล้ว';
+      case TripStatus.cancelled:
+        return 'ยกเลิกแล้ว';
     }
   }
 
@@ -34,6 +62,8 @@ extension TripStatusLabel on TripStatus {
         return '📦';
       case TripStatus.completed:
         return '✅';
+      case TripStatus.cancelled:
+        return '⛔';
     }
   }
 }
@@ -67,6 +97,27 @@ class MyOrderItem extends Equatable {
   final bool isDelivered;       // ส่งมอบแล้ว
   final double? finalPrice;     // ราคาจริงที่ใส่ตอนสรุปยอด
 
+  /// The order's own status on the wire — `REQUESTED`, `ACCEPTED`,
+  /// `PURCHASING`, `PURCHASED`, `DELIVERING`, `DELIVERED`, `COMPLETED`,
+  /// `REJECTED`, `CANCELLED`.
+  ///
+  /// [isChecked] and [isDelivered] are derived from it when the trip is read
+  /// and then moved optimistically as the runner taps, so the checklist stays
+  /// responsive while the call is in flight. This field is what the truth was
+  /// last time the server was asked.
+  final String status;
+
+  /// The ค่ารับฝาก this errand pays the runner, in baht. Satang on the wire;
+  /// the client divides once, at its own edge.
+  final double rewardAmount;
+
+  /// The ceiling the requester authorised for the goods, in baht.
+  final double maxItemBudget;
+
+  /// The requester's phone, disclosed by the API only to the assigned runner
+  /// and only once delivery has arrived. Null everywhere else.
+  final String? buyerPhone;
+
   const MyOrderItem({
     required this.id,
     required this.buyerName,
@@ -78,12 +129,24 @@ class MyOrderItem extends Equatable {
     this.isChecked = false,
     this.isDelivered = false,
     this.finalPrice,
+    this.status = 'ACCEPTED',
+    this.rewardAmount = 0,
+    this.maxItemBudget = 0,
+    this.buyerPhone,
   });
+
+  /// A request the runner has not answered yet. It holds no seat until they do.
+  bool get isPending => status == 'REQUESTED' || status == 'WAITING_MATCH';
+
+  /// Off the trip — refused, called off, or timed out.
+  bool get isClosed =>
+      status == 'REJECTED' || status == 'CANCELLED' || status == 'EXPIRED';
 
   MyOrderItem copyWith({
     bool? isChecked,
     bool? isDelivered,
     double? finalPrice,
+    String? status,
   }) {
     return MyOrderItem(
       id: id,
@@ -96,6 +159,10 @@ class MyOrderItem extends Equatable {
       isChecked: isChecked ?? this.isChecked,
       isDelivered: isDelivered ?? this.isDelivered,
       finalPrice: finalPrice ?? this.finalPrice,
+      status: status ?? this.status,
+      rewardAmount: rewardAmount,
+      maxItemBudget: maxItemBudget,
+      buyerPhone: buyerPhone,
     );
   }
 
@@ -111,6 +178,10 @@ class MyOrderItem extends Equatable {
         isChecked,
         isDelivered,
         finalPrice,
+        status,
+        rewardAmount,
+        maxItemBudget,
+        buyerPhone,
       ];
 }
 
@@ -129,6 +200,9 @@ class MyTripEntity extends Equatable {
   final List<MyOrderItem> orders;
   final DateTime? arrivedAt;   // เวลาที่กด "ถึงจุดนัดรับ"
 
+  /// The runner's own terms, as they wrote them on the trip.
+  final String note;
+
   const MyTripEntity({
     required this.id,
     required this.destination,
@@ -140,7 +214,13 @@ class MyTripEntity extends Equatable {
     this.status = TripStatus.accepting,
     required this.orders,
     this.arrivedAt,
+    this.note = '',
   });
+
+  /// Over, one way or the other. The two endings read differently on screen but
+  /// behave the same: nothing on the trip can be acted on any more.
+  bool get isFinished =>
+      status == TripStatus.completed || status == TripStatus.cancelled;
 
   int get filledSlots => orders.length;
   int get availableSlots => totalSlots - filledSlots;
@@ -167,6 +247,7 @@ class MyTripEntity extends Equatable {
       status: status ?? this.status,
       orders: orders ?? this.orders,
       arrivedAt: arrivedAt ?? this.arrivedAt,
+      note: note,
     );
   }
 
@@ -182,5 +263,6 @@ class MyTripEntity extends Equatable {
         status,
         orders,
         arrivedAt,
+        note,
       ];
 }

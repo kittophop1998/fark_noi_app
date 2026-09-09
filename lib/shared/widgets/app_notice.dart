@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_shape.dart';
 import '../../core/theme/app_typography.dart';
 import 'app_badge.dart';
@@ -38,6 +37,10 @@ class AppNotice extends StatelessWidget {
         return Icons.warning_amber_rounded;
       case AppTone.error:
         return Icons.error_outline_rounded;
+      // A trust notice is vouching for something, so it wears the shield
+      // rather than the "i" every other neutral message wears.
+      case AppTone.trust:
+        return Icons.verified_user_outlined;
       case AppTone.info:
       case AppTone.neutral:
       case AppTone.brand:

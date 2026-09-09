@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 
+import '../../../../core/di/injection_container.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/prompt_pay_config.dart';
+import '../../../orders/presentation/store/create_order_store.dart';
 import '../../domain/entities/home_entity.dart';
 
 // ─── Color shortcuts (all from AppColors) ────────────────────────────────────
@@ -60,7 +63,7 @@ class _TripDetailPageState extends State<TripDetailPage> {
   final _orderController = TextEditingController();
   final _priceController = TextEditingController();
   final _focusOrder = FocusNode();
-  bool _hasImage = false;
+  late final CreateOrderStore _store = sl<CreateOrderStore>();
   _OutOfStockOption _outOfStockOption = _OutOfStockOption.substitute;
 
   HomeEntity get runner => widget.runner;
@@ -77,22 +80,26 @@ class _TripDetailPageState extends State<TripDetailPage> {
     return '—';
   }
 
-  Future<void> _pickImage() async {
-    setState(() => _hasImage = true);
-  }
-
   void _confirmOrder() {
     final order = _orderController.text.trim();
     if (order.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('กรุณาใส่รายการของที่ต้องการฝากซื้อก่อนนะครับ 😊'),
-          backgroundColor: _kPrimary,
-        ),
-      );
+      _warn('กรุณาใส่รายการของที่ต้องการฝากซื้อก่อนนะครับ 😊');
       _focusOrder.requestFocus();
       return;
     }
+    // The estimate is the ceiling the runner may spend, and the figure the
+    // requester's credit is held against — so unlike in the mock it is not
+    // optional. Anything unspent comes back when the errand settles.
+    final price = int.tryParse(_priceController.text.trim()) ?? 0;
+    if (price <= 0) {
+      _warn('ใส่ราคาประมาณของรายการนี้ด้วยนะ เพื่อกันวงเงินให้ผู้เดินทาง');
+      return;
+    }
+    if (!runner.isOpen) {
+      _warn('ทริปนี้ปิดรับฝากแล้ว');
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -101,9 +108,24 @@ class _TripDetailPageState extends State<TripDetailPage> {
       builder: (_) => _ConfirmSheet(
         runner: runner,
         order: order,
-        price: _priceController.text.trim(),
-        hasImage: _hasImage,
+        price: price,
         outOfStockOption: _outOfStockOption,
+        store: _store,
+        onDone: () {
+          Navigator.of(context).pop();
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+  }
+
+  void _warn(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: _kPrimary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -163,8 +185,6 @@ class _TripDetailPageState extends State<TripDetailPage> {
               orderController: _orderController,
               priceController: _priceController,
               focusOrder: _focusOrder,
-              pickedImage: _hasImage,
-              onPickImage: _pickImage,
               outOfStockOption: _outOfStockOption,
               onOutOfStockChanged: (val) =>
                   setState(() => _outOfStockOption = val),
@@ -212,13 +232,13 @@ class _ProfileHeader extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 32,
-                backgroundColor: isFull ? Colors.grey.shade200 : _kPrimaryLight,
+                backgroundColor: isFull ? AppColors.surfaceStrong : _kPrimaryLight,
                 child: Text(
                   runner.avatarInitial,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
-                    color: isFull ? Colors.grey.shade500 : _kPrimary,
+                    color: isFull ? AppColors.faint : _kPrimary,
                   ),
                 ),
               ),
@@ -230,7 +250,7 @@ class _ProfileHeader extends StatelessWidget {
                   height: 14,
                   decoration: BoxDecoration(
                     color:
-                        isFull ? Colors.red.shade400 : const Color(0xFF4CAF50),
+                        isFull ? AppColors.error : AppColors.success,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                   ),
@@ -261,7 +281,7 @@ class _ProfileHeader extends StatelessWidget {
                       (i) => Icon(
                         i < 4 ? Icons.star_rounded : Icons.star_half_rounded,
                         size: 15,
-                        color: const Color(0xFFFFC107),
+                        color: AppColors.rating,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -284,10 +304,10 @@ class _ProfileHeader extends StatelessWidget {
             padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: isFull ? Colors.red.shade50 : _kPrimaryLight,
+              color: isFull ? AppColors.errorSoft : _kPrimaryLight,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: isFull ? Colors.red.shade200 : _kPrimary.withOpacity(0.3),
+                color: isFull ? AppColors.errorBorder : _kPrimary.withOpacity(0.3),
               ),
             ),
             child: Text(
@@ -295,7 +315,7 @@ class _ProfileHeader extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: isFull ? Colors.red.shade700 : _kPrimary,
+                color: isFull ? AppColors.errorStrong : _kPrimary,
               ),
             ),
           ),
@@ -415,7 +435,7 @@ class _TripInfoCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 _TripRow(
                   icon: Icons.payments_outlined,
-                  iconColor: const Color(0xFF7B1FA2),
+                  iconColor: AppColors.secondary,
                   label: 'ค่าบริการ',
                   value: 'ค่าหิ้วเริ่มต้น 20 บาท/ออเดอร์',
                 ),
@@ -626,7 +646,7 @@ class _AvailableSection extends StatelessWidget {
               _ItemTag(
                   icon: Icons.no_luggage_rounded,
                   label: 'ไม่รับของหนัก',
-                  color: Colors.red),
+                  color: AppColors.error),
               _ItemTag(
                   icon: Icons.production_quantity_limits_rounded,
                   label: 'สูงสุด 3 ชิ้น',
@@ -654,7 +674,7 @@ class _AvailableSection extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: isFull ? Colors.red.shade500 : _kPrimary,
+                  color: isFull ? AppColors.error : _kPrimary,
                 ),
               ),
             ],
@@ -667,7 +687,7 @@ class _AvailableSection extends StatelessWidget {
               minHeight: 10,
               backgroundColor: _kBorder,
               valueColor: AlwaysStoppedAnimation<Color>(
-                isFull ? Colors.red.shade400 : _kPrimary,
+                isFull ? AppColors.error : _kPrimary,
               ),
             ),
           ),
@@ -682,7 +702,7 @@ class _AvailableSection extends StatelessWidget {
                 height: 12,
                 margin: const EdgeInsets.only(right: 6),
                 decoration: BoxDecoration(
-                  color: used ? Colors.grey.shade400 : _kPrimary,
+                  color: used ? AppColors.disabled : _kPrimary,
                   borderRadius: BorderRadius.circular(4),
                 ),
               );
@@ -738,8 +758,6 @@ class _OrderInputArea extends StatelessWidget {
   final TextEditingController orderController;
   final TextEditingController priceController;
   final FocusNode focusOrder;
-  final bool pickedImage;
-  final VoidCallback onPickImage;
   final _OutOfStockOption outOfStockOption;
   final ValueChanged<_OutOfStockOption> onOutOfStockChanged;
 
@@ -747,8 +765,6 @@ class _OrderInputArea extends StatelessWidget {
     required this.orderController,
     required this.priceController,
     required this.focusOrder,
-    required this.pickedImage,
-    required this.onPickImage,
     required this.outOfStockOption,
     required this.onOutOfStockChanged,
   });
@@ -810,7 +826,7 @@ class _OrderInputArea extends StatelessWidget {
               hintText:
                   'คุณอยากฝากซื้ออะไร?\nเช่น ข้าวผัดกะเพราไข่ดาว ไม่เผ็ด ไม่ใส่ผัก',
               hintStyle: TextStyle(
-                  fontSize: 13, color: Colors.grey.shade400, height: 1.5),
+                  fontSize: 13, color: AppColors.disabled, height: 1.5),
               filled: true,
               fillColor: _kBg,
               contentPadding: const EdgeInsets.all(14),
@@ -837,7 +853,7 @@ class _OrderInputArea extends StatelessWidget {
             decoration: InputDecoration(
               hintText: 'ราคาประมาณการ (บาท)',
               hintStyle:
-                  TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                  TextStyle(fontSize: 13, color: AppColors.disabled),
               prefixIcon:
                   const Icon(Icons.attach_money_rounded, color: _kPrimary),
               filled: true,
@@ -897,7 +913,7 @@ class _OrderInputArea extends StatelessWidget {
                 const SizedBox(height: 8),
                 _OutOfStockOptionTile(
                   icon: Icons.remove_shopping_cart_outlined,
-                  iconColor: Colors.red.shade400,
+                  iconColor: AppColors.error,
                   title: 'ไม่เอาเลย',
                   subtitle: 'ยกเลิกรายการนี้ถ้าหาไม่ได้',
                   selected: outOfStockOption == _OutOfStockOption.skip,
@@ -907,64 +923,11 @@ class _OrderInputArea extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
-
-          // Photo reference
-          const Text(
-            'แนบรูปสินค้าอ้างอิง (ไม่บังคับ)',
-            style: TextStyle(
-              fontSize: 12,
-              color: _kTextSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: onPickImage,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: pickedImage ? 100 : 80,
-              decoration: BoxDecoration(
-                color: _kBg,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: pickedImage ? _kPrimary : _kBorder,
-                  style: BorderStyle.solid,
-                  width: pickedImage ? 1.5 : 1,
-                ),
-              ),
-              child: pickedImage
-                  ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.check_circle_rounded,
-                            color: _kPrimary, size: 28),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'แนบรูปแล้ว ✅  แตะเพื่อเปลี่ยน',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: _kPrimary,
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.add_photo_alternate_outlined,
-                            color: _kPrimary, size: 24),
-                        const SizedBox(height: 4),
-                        Text(
-                          'แตะเพื่อแนบรูป',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade500),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
+          // A reference photograph belongs here — "the blue one, this size" is
+          // a question one picture settles, and the API takes it as an
+          // `imageMediaId` on the item. It is not offered yet because it needs
+          // the media upload pipeline (`POST /media/upload-sessions`), and a
+          // control that only pretended to attach one is worse than none.
         ],
       ),
     );
@@ -1044,7 +1007,7 @@ class _OutOfStockOptionTile extends StatelessWidget {
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_off_rounded,
               size: 20,
-              color: selected ? iconColor : Colors.grey.shade400,
+              color: selected ? iconColor : AppColors.disabled,
             ),
           ],
         ),
@@ -1108,17 +1071,30 @@ class _BottomBar extends StatelessWidget {
 class _ConfirmSheet extends StatelessWidget {
   final HomeEntity runner;
   final String order;
-  final String price;
-  final bool hasImage;
+  final int price;
   final _OutOfStockOption outOfStockOption;
+  final CreateOrderStore store;
+
+  /// Closes the sheet and the trip behind it. Passed in rather than popped
+  /// here, because the sheet's own `context` is gone by the time the request
+  /// comes back.
+  final VoidCallback onDone;
 
   const _ConfirmSheet({
     required this.runner,
     required this.order,
     required this.price,
-    required this.hasImage,
     required this.outOfStockOption,
+    required this.store,
+    required this.onDone,
   });
+
+  /// The instruction the requester chose, as the sentence the runner will read.
+  /// The API has no field for it — it is free text on the order, which is where
+  /// somebody standing in a shop actually looks.
+  String get _note => outOfStockOption == _OutOfStockOption.substitute
+      ? 'ถ้าของหมด: เปลี่ยนเป็นอะไรก็ได้ที่ใกล้เคียง'
+      : 'ถ้าของหมด: ไม่ต้องซื้อทดแทน';
 
   @override
   Widget build(BuildContext context) {
@@ -1135,7 +1111,7 @@ class _ConfirmSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: AppColors.borderStrong,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1163,10 +1139,12 @@ class _ConfirmSheet extends StatelessWidget {
           _SummaryRow(label: 'ฝากกับ', value: runner.name),
           _SummaryRow(label: 'ไปที่', value: runner.destination),
           _SummaryRow(label: 'รายการ', value: order),
-          if (price.isNotEmpty)
-            _SummaryRow(label: 'ราคาประมาณ', value: '$price บาท'),
-          _SummaryRow(
-              label: 'รูปอ้างอิง', value: hasImage ? 'แนบแล้ว ✅' : 'ไม่มี'),
+          _SummaryRow(label: 'วงเงินสูงสุด', value: '$price บาท'),
+          if (runner.feeSatang != null)
+            _SummaryRow(
+              label: 'ค่าหิ้ว',
+              value: '${runner.feeSatang! ~/ 100} บาท',
+            ),
           _SummaryRow(
             label: 'ถ้าของหมด',
             value: outOfStockOption == _OutOfStockOption.substitute
@@ -1176,39 +1154,91 @@ class _ConfirmSheet extends StatelessWidget {
           const SizedBox(height: 20),
 
           // Confirm button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text(
-                        '✅ ส่งคำขอฝากซื้อสำเร็จ! รอผู้รับฝากตอบรับนะครับ'),
-                    backgroundColor: _kPrimary,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+          Observer(
+            builder: (_) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (store.hasError) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _kErrorLight,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.errorBorder),
+                    ),
+                    child: Text(
+                      store.errorMessage!,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.errorStrong,
+                      ),
+                    ),
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _kAction,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              child: const Text(
-                'ยืนยัน ✓',
-                style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w800),
-              ),
+                  const SizedBox(height: 12),
+                ],
+                ElevatedButton(
+                  onPressed: store.isSubmitting
+                      ? null
+                      : () => _submit(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kPrimary,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor:
+                        _kPrimary.withOpacity(0.45),
+                    disabledForegroundColor:
+                        Colors.white.withOpacity(0.45),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: store.isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          'ยืนยัน ✓',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _submit(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final placed = await store.submit(
+      trip: runner,
+      itemName: order,
+      quantity: 1,
+      expectedPrice: price,
+      note: _note,
+    );
+    // A refusal keeps the sheet open with the server's own sentence on it —
+    // every one of them (a full trip, a closed trip, not enough credit) is
+    // something the requester can act on, and closing the sheet would take the
+    // form they would have to fill in again with it.
+    if (!placed) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('✅ ส่งคำขอฝากซื้อสำเร็จ! รอผู้รับฝากตอบรับนะครับ'),
+        backgroundColor: AppColors.successFill,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+    onDone();
   }
 }
 
@@ -1608,7 +1638,7 @@ class _PaymentSummarySheetState extends State<_PaymentSummarySheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: AppColors.borderStrong,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1762,9 +1792,9 @@ class _PaymentSummarySheetState extends State<_PaymentSummarySheet> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0F4FF),
+                  color: AppColors.secondarySoft,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _kPrimary.withOpacity(0.25)),
+                  border: Border.all(color: AppColors.secondaryBorder),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1888,7 +1918,7 @@ class _PaymentSummarySheetState extends State<_PaymentSummarySheet> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _kPrimary,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade300,
+                        disabledBackgroundColor: AppColors.borderStrong,
                         elevation: 2,
                         shadowColor: _kPrimary.withOpacity(0.4),
                         padding: const EdgeInsets.symmetric(vertical: 14),

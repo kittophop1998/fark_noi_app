@@ -145,9 +145,10 @@ _ButtonPalette _palette(AppButtonVariant variant) {
     case AppButtonVariant.primary:
       return const _ButtonPalette(AppColors.primary, AppColors.onPrimary);
     // `primaryInkStrong` rather than `primary` or `primaryInk`: the fill is a
-    // coral tint, where `primary` lands at 3.0:1 (a legible *shape* and an
-    // illegible *label*) and `primaryInk` at 4.24:1. The strong step clears
-    // 4.5:1, which is what a 14px semibold needs.
+    // coral tint, where `primary` lands at 2.9:1 (a legible *shape* and an
+    // illegible *label*) and `primaryInk` at 4.47:1 — near enough to look fine
+    // and still short. The strong step clears it at 6.05:1, which is what a
+    // 14px semibold needs.
     case AppButtonVariant.secondary:
       return const _ButtonPalette(
         AppColors.primarySoft,

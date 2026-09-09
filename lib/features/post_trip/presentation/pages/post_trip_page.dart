@@ -10,6 +10,7 @@ import '../../../../../shared/widgets/app_button.dart';
 import '../../../../../shared/widgets/app_notice.dart';
 import '../../../../../shared/widgets/app_page.dart';
 import '../../../../../shared/widgets/app_page_header.dart';
+import '../../../../../shared/models/catalogue_store.dart';
 import '../../../../../shared/widgets/app_section.dart';
 import '../store/post_trip_store.dart';
 import '../widgets/post_trip_category_picker.dart';
@@ -48,11 +49,15 @@ class _PostTripPageState extends State<PostTripPage> {
   @override
   void initState() {
     super.initState();
-    _store = sl<PostTripStore>();
+    _store = sl<PostTripStore>()..reset();
+    // The picker is seeded before a letter is typed: nearest first, so somebody
+    // going where they usually go taps once and never opens the keyboard.
+    _store.searchStores('');
   }
 
   @override
   void dispose() {
+    _store.dispose();
     _destinationCtrl.dispose();
     _feeCtrl.dispose();
     _pickupCtrl.dispose();
@@ -77,9 +82,10 @@ class _PostTripPageState extends State<PostTripPage> {
     }
   }
 
-  void _selectPlace(String place) {
-    _destinationCtrl.text = place;
-    _store.setDestination(place);
+  void _selectStore(CatalogueStore store) {
+    _destinationCtrl.text = store.label;
+    _store.selectStore(store);
+    setState(() {});
   }
 
   Future<void> _submit() async {
@@ -91,7 +97,6 @@ class _PostTripPageState extends State<PostTripPage> {
     if (!fieldsValid) return;
 
     _store
-      ..setDestination(_destinationCtrl.text)
       ..setFee(_feeCtrl.text)
       ..setPickupPoint(_pickupCtrl.text);
 
@@ -102,7 +107,7 @@ class _PostTripPageState extends State<PostTripPage> {
     if (_store.hasError) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text('เปิดทริปไม่สำเร็จ: ${_store.errorMessage}'),
+          content: Text(_store.errorMessage!),
           backgroundColor: AppColors.errorFill,
         ),
       );
@@ -144,12 +149,23 @@ class _PostTripPageState extends State<PostTripPage> {
               subtitle: 'ร้านหรือย่านที่คุณกำลังจะไป',
               child: Column(
                 children: [
-                  PostTripDestinationInput(controller: _destinationCtrl),
+                  Observer(
+                    builder: (_) => PostTripDestinationInput(
+                      controller: _destinationCtrl,
+                      hasSelection: _store.hasDestination,
+                      onChanged: (value) {
+                        _store.setDestination(value);
+                        setState(() {});
+                      },
+                    ),
+                  ),
                   const SizedBox(height: AppSpace.x3),
                   Observer(
                     builder: (_) => PostTripQuickSelectPlaces(
-                      selected: _store.destination,
-                      onSelect: _selectPlace,
+                      stores: _store.storeResults,
+                      selectedId: _store.selectedStore?.id,
+                      isLoading: _store.isSearchingStores,
+                      onSelect: _selectStore,
                     ),
                   ),
                 ],

@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The discovery feed is measured from where the user is: GET
+         /trips/nearby refuses a request without a coordinate. Coarse is enough
+         and is asked for on its own — the feed is a 7 km circle, so a fine fix
+         buys nothing and asking for one is a bigger permission than the
+         product needs. A refusal is not fatal: LocationService falls back to
+         the campus coordinate. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="fark_noi"
         android:name="${applicationName}"

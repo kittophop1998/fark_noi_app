@@ -1,21 +1,14 @@
 import 'package:equatable/equatable.dart';
 
-/// Runner = คนที่จะไปซื้อของและรับฝากสินค้า
+/// One trip in the discovery feed — somebody already going somewhere, with room
+/// to carry something back.
+///
+/// This is `NearbyTripResponse` as the feed screens use it. What the API
+/// withholds is withheld here too: the origin is an **area name** and never an
+/// address, because `GET /trips/nearby` deliberately publishes no coordinate
+/// for where a runner lives. [dormitory] keeps its name from when the feed was
+/// mocked, and holds `origin.name` — the area the runner sets off from.
 class HomeEntity extends Equatable {
-  final int id;
-  final String name;           // ชื่อ runner
-  final String avatarInitial;  // อักษรย่อสำหรับ Avatar
-  final String destination;    // ที่หมาย เช่น "Big C รามคำแหง"
-  final String dormitory;      // ที่อยู่ เช่น "หอ A ตึก 3 ห้อง 201"
-  final String departureTime;  // เวลาออก เช่น "14:30 น."
-  final int totalSlots;        // จำนวน slot ทั้งหมด
-  final int filledSlots;       // slot ที่ถูกจองแล้ว
-  final double rating;         // คะแนน เช่น 4.9
-  final int reviewCount;       // จำนวนรีวิว
-  final String eta;            // เวลากลับถึงหอ เช่น "~15:30 น."
-  final List<String> tags;     // เช่น ['ของกิน', 'ไม่รับของหนัก']
-  final String category;       // หมวดหมู่หลัก เช่น 'food', 'mart', 'pharmacy', 'drink'
-
   const HomeEntity({
     required this.id,
     required this.name,
@@ -25,21 +18,103 @@ class HomeEntity extends Equatable {
     required this.departureTime,
     required this.totalSlots,
     required this.filledSlots,
+    this.runnerId = '',
+    this.avatarUrl,
     this.rating = 5.0,
     this.reviewCount = 0,
     this.eta = '',
     this.tags = const [],
     this.category = 'food',
+    this.distanceMeters,
+    this.note = '',
+    this.status = 'OPEN',
+    this.destinationLatitude,
+    this.destinationLongitude,
+    this.feeSatang,
   });
+
+  /// The trip's ObjectId. A string because that is what every `/trips/{tripId}`
+  /// path takes — an int here was the mock's own invention.
+  final String id;
+
+  /// Who is going. `runner.displayName`, and a placeholder when the feed could
+  /// not resolve the directory lookup (the API sends no `runner` then).
+  final String name;
+  final String runnerId;
+  final String avatarInitial;
+  final String? avatarUrl;
+
+  /// `destination.name`. A public endpoint name — never an address.
+  final String destination;
+
+  /// `origin.name`. The same: the area they set off from, rounded by the server.
+  final String dormitory;
+
+  /// `departureAt`, already formatted for reading — "14:30 น.".
+  final String departureTime;
+
+  final int totalSlots;
+  final int filledSlots;
+  final double rating;
+  final int reviewCount;
+
+  /// Return time. The API has no such field — a trip publishes when it leaves,
+  /// not when it gets back — so this is empty on a real feed and the card
+  /// simply omits the line.
+  final String eta;
+
+  /// The small outlined markers under the route: what the runner charges, and
+  /// how far away they are. Derived when the trip is read, so the card stays
+  /// the one place that decides how a trip *looks*.
+  final List<String> tags;
+
+  /// `food` | `mart` | `pharmacy` | `drink`, for the feed's filter chips.
+  ///
+  /// The API has no category on a trip — a trip is a journey, not a shop — so
+  /// this is read from the destination's name. See `HomeModel._categoryOf`.
+  final String category;
+
+  /// Metres from the caller to the end of the trip that matched. Null when the
+  /// feed was drawn from the fallback coordinate, where a distance would be a
+  /// number nothing measured.
+  final int? distanceMeters;
+
+  /// The runner's own terms for whoever asks them for something.
+  final String note;
+
+  /// `OPEN` | `IN_PROGRESS` | `COMPLETED` | `CANCELLED`.
+  final String status;
+
+  /// Where the trip ends, from `route.destination`.
+  ///
+  /// The feed publishes this one **exactly** — it is a shop, not somebody's
+  /// home — while `route.origin` stays rounded to about a kilometre. It is
+  /// carried because placing an order needs the shop's coordinate: an order
+  /// names its own store, and this is the one the runner is already going to.
+  final double? destinationLatitude;
+  final double? destinationLongitude;
+
+  /// The ค่ารับฝาก the runner published, in satang, when they published one at
+  /// all. Null under REQUESTER_OFFER, where the requester names the figure —
+  /// and a zero there would read as "free".
+  final int? feeSatang;
+
+  bool get runnerSetsFee => feeSatang != null;
 
   int get availableSlots => totalSlots - filledSlots;
   bool get isFull => availableSlots <= 0;
 
+  /// Whether this trip still takes requests. A trip that has set off is still
+  /// worth reading and is no longer worth asking.
+  bool get isOpen => status == 'OPEN' && !isFull;
+
   @override
   List<Object?> get props => [
         id,
+        runnerId,
         name,
         avatarInitial,
+        avatarUrl,
         destination,
         dormitory,
         departureTime,
@@ -50,5 +125,11 @@ class HomeEntity extends Equatable {
         eta,
         tags,
         category,
+        distanceMeters,
+        note,
+        status,
+        destinationLatitude,
+        destinationLongitude,
+        feeSatang,
       ];
 }

@@ -1,108 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../core/di/injection_container.dart';
+import '../../../../../core/router/app_router.dart';
 import '../../../../../core/theme/app_colors.dart';
+import '../../../../../shared/widgets/app_states.dart';
+import '../../domain/entities/notification_entity.dart';
+import '../store/notifications_store.dart';
 
-// ─── Data Models ───────────────────────────────────────────────────────────────
-
-enum NotiType { actionRequired, update, general }
-
-enum NotiFilter { all, updates, payments }
-
-class NotiItem {
-  final String id;
-  final NotiType type;
-  final String? avatarUrl;
-  final String title;
-  final String body;
-  final DateTime time;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-  final int groupCount; // >1 = grouped
-  final bool isRead;
-
-  const NotiItem({
-    required this.id,
-    required this.type,
-    required this.title,
-    required this.body,
-    required this.time,
-    this.avatarUrl,
-    this.actionLabel,
-    this.onAction,
-    this.groupCount = 1,
-    this.isRead = false,
-  });
-
-  NotiItem copyWith({bool? isRead}) => NotiItem(
-        id: id,
-        type: type,
-        avatarUrl: avatarUrl,
-        title: title,
-        body: body,
-        time: time,
-        actionLabel: actionLabel,
-        onAction: onAction,
-        groupCount: groupCount,
-        isRead: isRead ?? this.isRead,
-      );
-}
-
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-
-final _mockNotifications = <NotiItem>[
-  NotiItem(
-    id: '1',
-    type: NotiType.actionRequired,
-    title: 'คุณมินส่งยอดสรุปมาให้แล้ว 💸',
-    body: 'ชำระเงิน 75 บาท — ทริป Big C รังสิต',
-    time: DateTime.now().subtract(const Duration(minutes: 2)),
-    actionLabel: 'ดูยอด / จ่ายเงิน',
-    isRead: false,
-  ),
-  NotiItem(
-    id: '2',
-    type: NotiType.update,
-    title: 'คุณแพรถึงจุดนัดรับแล้ว! 📍',
-    body: 'ออกไปรับของได้ที่หน้าหอ A เลยนะ',
-    time: DateTime.now().subtract(const Duration(minutes: 10)),
-    isRead: false,
-  ),
-  NotiItem(
-    id: '3',
-    type: NotiType.general,
-    title: 'มีออเดอร์ใหม่ 3 รายการในทริปของคุณ 🛍️',
-    body: 'คนมาฝากซื้อเพิ่มในทริป Big C ของคุณ',
-    time: DateTime.now().subtract(const Duration(minutes: 30)),
-    groupCount: 3,
-    isRead: false,
-  ),
-  NotiItem(
-    id: '4',
-    type: NotiType.actionRequired,
-    title: 'คุณโบส่งสลิปมาแล้ว ✅',
-    body: 'ยอด 120 บาท — ทริป Lotus\'s รังสิต รอยืนยัน',
-    time: DateTime.now().subtract(const Duration(hours: 1)),
-    actionLabel: 'ยืนยันรับเงิน',
-    isRead: true,
-  ),
-  NotiItem(
-    id: '5',
-    type: NotiType.update,
-    title: 'ทริป 7-Eleven ปิดรับฝากแล้ว',
-    body: 'คุณนิกปิดรับออเดอร์แล้ว — 5 คิว เต็ม!',
-    time: DateTime.now().subtract(const Duration(hours: 2)),
-    isRead: true,
-  ),
-  NotiItem(
-    id: '6',
-    type: NotiType.general,
-    title: 'มีคนอยากให้คุณไปทริป Makro 🏪',
-    body: 'เพื่อนใกล้เคียงอยากฝากซื้อของ รีบเปิดรับก่อนคนอื่นเลย!',
-    time: DateTime.now().subtract(const Duration(hours: 5)),
-    isRead: true,
-  ),
-];
+/// The row type this screen draws. One name for the entity so the six hundred
+/// lines below keep the shape they had when the list was a constant.
+typedef NotiItem = NotificationEntity;
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -115,8 +24,15 @@ class NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<NotificationsPage> {
   NotiFilter _filter = NotiFilter.all;
+  late final NotificationsStore _store;
 
-  late final List<NotiItem> _items = List.from(_mockNotifications);
+  @override
+  void initState() {
+    super.initState();
+    _store = sl<NotificationsStore>()..load();
+  }
+
+  List<NotiItem> get _items => _store.items;
 
   List<NotiItem> get _filtered {
     switch (_filter) {
@@ -129,30 +45,48 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
   }
 
-  int get _unreadCount =>
-      _items.where((n) => n.isRead == false).length;
+  int get _unreadCount => _store.unreadCount;
 
-  void _dismiss(String id) {
-    setState(() => _items.removeWhere((n) => n.id == id));
+  void _dismiss(String id) => _store.dismiss(id);
+
+  void _markRead(String id) => _store.markRead(id);
+
+  void _markAllRead() => _store.markAllRead();
+
+  /// Where a notification's own control goes.
+  ///
+  /// The API's `actionUrl` is a path into the **web** app, and pushing it here
+  /// would land on a route this router does not have. The `entityType` is the
+  /// portable half of the same fact, so it is what the destination is chosen
+  /// from — and an event about something this app has no screen for gets no
+  /// button rather than a broken one.
+  VoidCallback? _actionFor(NotiItem item) {
+    switch (item.entityType.toUpperCase()) {
+      case 'ORDER':
+      case 'TRIP':
+        return () {
+          _markRead(item.id);
+          context.push(AppRoutes.myTrips);
+        };
+      default:
+        return null;
+    }
   }
 
-  void _markRead(String id) {
-    setState(() {
-      final i = _items.indexWhere((n) => n.id == id);
-      if (i != -1) _items[i] = _items[i].copyWith(isRead: true);
-    });
-  }
-
-  void _markAllRead() {
-    setState(() {
-      for (int i = 0; i < _items.length; i++) {
-        _items[i] = _items[i].copyWith(isRead: true);
-      }
-    });
+  /// "ล้างทั้งหมด" — every row, one call each. The API deletes one at a time
+  /// and only a read one, which [NotificationsStore.dismiss] already handles.
+  Future<void> _clearAll() async {
+    for (final item in [..._items]) {
+      await _store.dismiss(item.id);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    return Observer(builder: (_) => _build(context));
+  }
+
+  Widget _build(BuildContext context) {
     final filtered = _filtered;
 
     return Scaffold(
@@ -179,8 +113,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             if (_unreadCount > 0) ...[
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppColors.warning,
                   borderRadius: BorderRadius.circular(20),
@@ -212,7 +145,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
             )
           else if (_items.isNotEmpty)
             TextButton(
-              onPressed: () => setState(() => _items.clear()),
+              onPressed: _clearAll,
               child: const Text(
                 'ล้างทั้งหมด',
                 style: TextStyle(
@@ -236,21 +169,32 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
           // ── List ─────────────────────────────────────────────────────────
           Expanded(
-            child: filtered.isEmpty
-                ? const _EmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      return _NotiCard(
-                        key: ValueKey(item.id),
-                        item: item,
-                        onDismiss: () => _dismiss(item.id),
-                        onTap: () => _markRead(item.id),
-                      );
-                    },
-                  ),
+            child: _store.isLoading && _items.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: SkeletonList(),
+                  )
+                : _store.hasError && _items.isEmpty
+                    ? ErrorState(
+                        message: _store.errorMessage!,
+                        onRetry: _store.load,
+                      )
+                    : filtered.isEmpty
+                        ? const _EmptyState()
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                            itemCount: filtered.length,
+                            itemBuilder: (context, index) {
+                              final item = filtered[index];
+                              return _NotiCard(
+                                key: ValueKey(item.id),
+                                item: item,
+                                onDismiss: () => _dismiss(item.id),
+                                onTap: () => _markRead(item.id),
+                                onAction: _actionFor(item),
+                              );
+                            },
+                          ),
           ),
         ],
       ),
@@ -351,11 +295,16 @@ class _NotiCard extends StatelessWidget {
   final VoidCallback onDismiss;
   final VoidCallback onTap;
 
+  /// The row's one control, when the event is something the reader has to act
+  /// on. Null on the rest, and the button is simply not drawn.
+  final VoidCallback? onAction;
+
   const _NotiCard({
     super.key,
     required this.item,
     required this.onDismiss,
     required this.onTap,
+    this.onAction,
   });
 
   Color get _accentColor {
@@ -410,7 +359,7 @@ class _NotiCard extends StatelessWidget {
         padding: const EdgeInsets.only(right: 20),
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: Colors.red.shade400,
+          color: AppColors.error,
           borderRadius: BorderRadius.circular(16),
         ),
         child: const Column(
@@ -465,32 +414,6 @@ class _NotiCard extends StatelessWidget {
                       ),
                       child: Icon(_typeIcon, color: _accentColor, size: 22),
                     ),
-                    // Group count badge
-                    if (item.groupCount > 1)
-                      Positioned(
-                        right: -4,
-                        top: -4,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: _accentColor,
-                            shape: BoxShape.circle,
-                            border:
-                                Border.all(color: Colors.white, width: 1.5),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '${item.groupCount}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
 
@@ -541,7 +464,7 @@ class _NotiCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w400,
-                          color: Colors.grey.shade600,
+                          color: AppColors.muted,
                           height: 1.4,
                         ),
                       ),
@@ -549,25 +472,25 @@ class _NotiCard extends StatelessWidget {
                       Row(
                         children: [
                           Icon(Icons.access_time_rounded,
-                              size: 11, color: Colors.grey.shade400),
+                              size: 11, color: AppColors.disabled),
                           const SizedBox(width: 3),
                           Text(
                             _timeAgo(item.time),
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey.shade400,
+                              color: AppColors.disabled,
                             ),
                           ),
                         ],
                       ),
 
                       // ── Action Button (if any) ────────────────────
-                      if (item.actionLabel != null) ...[
+                      if (item.actionLabel != null && onAction != null) ...[
                         const SizedBox(height: 10),
                         SizedBox(
                           height: 32,
                           child: ElevatedButton(
-                            onPressed: item.onAction ?? () {},
+                            onPressed: onAction,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _accentColor,
                               foregroundColor: Colors.white,
@@ -603,7 +526,7 @@ class _NotiCard extends StatelessWidget {
                       border: Border.all(color: AppColors.border, width: 1),
                     ),
                     child: Icon(Icons.chat_bubble_outline_rounded,
-                        size: 15, color: Colors.grey.shade500),
+                        size: 15, color: AppColors.faint),
                   ),
                 ),
               ],
@@ -659,7 +582,7 @@ class _EmptyState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade500,
+              color: AppColors.faint,
               height: 1.5,
             ),
           ),

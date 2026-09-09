@@ -1,5 +1,6 @@
-
-# FVM Version Cache
+# FVM
 .fvm/
 
-.dart_tool/build/
+# Dart / Flutter generated
+.dart_tool/
+build/

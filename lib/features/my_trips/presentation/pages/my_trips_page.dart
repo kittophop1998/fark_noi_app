@@ -3,10 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:flutter_mobx/flutter_mobx.dart';
+
 import '../../domain/entities/my_trip_entity.dart';
-import '../../data/datasources/my_trips_mock_datasource.dart';
+import '../store/my_trips_store.dart';
+import '../../../../core/di/injection_container.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/prompt_pay_config.dart';
+import '../../../../shared/widgets/app_states.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
 const _kPrimary       = AppColors.primary;
@@ -31,8 +35,12 @@ class MyTripsPage extends StatefulWidget {
 
 class _MyTripsPageState extends State<MyTripsPage>
     with SingleTickerProviderStateMixin {
-  late MyTripEntity? _trip;
+  late final MyTripsStore _store;
   late AnimationController _badgeAnim;
+
+  /// The trip is the store's, not this widget's. Read through a getter so the
+  /// two thousand lines below keep the shape they had when it was a field.
+  MyTripEntity? get _trip => _store.trip;
 
   // local state for finalPrice editing
   final Map<String, TextEditingController> _priceControllers = {};
@@ -40,6 +48,7 @@ class _MyTripsPageState extends State<MyTripsPage>
   @override
   void initState() {
     super.initState();
+    _store = sl<MyTripsStore>();
     _badgeAnim = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -48,18 +57,20 @@ class _MyTripsPageState extends State<MyTripsPage>
   }
 
   Future<void> _loadTrip() async {
-    final trip = await MyTripsMockDataSource().getActiveTrip();
+    await _store.load();
     if (!mounted) return;
-    setState(() {
-      _trip = trip;
-      if (_trip != null) {
-        for (final o in _trip!.orders) {
-          _priceControllers[o.id] = TextEditingController(
-            text: o.finalPrice != null ? o.finalPrice!.toStringAsFixed(0) : '',
-          );
-        }
-      }
-    });
+    // One controller per errand, created on arrival and reused across reloads —
+    // a fresh controller on every read would drop whatever the runner was
+    // halfway through typing into it.
+    for (final order in _trip?.orders ?? const <MyOrderItem>[]) {
+      _priceControllers.putIfAbsent(
+        order.id,
+        () => TextEditingController(
+          text: order.finalPrice?.toStringAsFixed(0) ?? '',
+        ),
+      );
+    }
+    setState(() {});
   }
 
   @override
@@ -82,40 +93,48 @@ class _MyTripsPageState extends State<MyTripsPage>
         body: 'หลังจากนี้จะไม่มีใครสามารถฝากซื้อกับคุณในทริปนี้ได้อีก',
         confirmLabel: 'ปิดรับฝาก',
         confirmColor: _kAction,
-        onConfirm: () {
-          setState(() => _trip = _trip!.copyWith(status: TripStatus.shopping));
+        // `POST /trips/{id}/start`. Past this the trip takes no new requests —
+        // which is exactly what the dialog above promised.
+        onConfirm: () async {
+          final ok = await _store.startTrip();
+          if (!mounted) return;
+          if (!ok) _showError();
         },
       ),
     );
   }
 
+  /// The server's own sentence, in the one place a failed milestone can be seen.
+  void _showError() {
+    final message = _store.errorMessage;
+    if (message == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.errorFill,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+    );
+    _store.clearError();
+  }
+
   void _markArrived() {
     if (_trip == null) return;
-    setState(() {
-      _trip = _trip!.copyWith(
-        status: TripStatus.delivering,
-        arrivedAt: DateTime.now(),
-      );
-    });
+    // The app's own milestone: the API has no trip-level "I am back at the
+    // meeting point" state, and this is the moment the runner announces to
+    // everybody waiting at once. See [TripStatus.delivering].
+    _store.markArrivedAtPickup();
     ScaffoldMessenger.of(context).showSnackBar(
       _greenSnack(
           '📣 แจ้งเตือนไปยังทุกคนแล้ว: "ของมาถึงแล้ว รีบออกมารับได้เลย!"'),
     );
   }
 
-  void _toggleChecked(MyOrderItem order) {
-    setState(() {
-      final idx = _trip!.orders.indexOf(order);
-      _trip!.orders[idx] = order.copyWith(isChecked: !order.isChecked);
-    });
-  }
+  void _toggleChecked(MyOrderItem order) => _store.toggleChecked(order);
 
-  void _toggleDelivered(MyOrderItem order) {
-    setState(() {
-      final idx = _trip!.orders.indexOf(order);
-      _trip!.orders[idx] = order.copyWith(isDelivered: !order.isDelivered);
-    });
-  }
+  void _toggleDelivered(MyOrderItem order) => _store.toggleDelivered(order);
 
   void _openSummarySheet(MyOrderItem order) {
     showModalBottomSheet(
@@ -125,12 +144,7 @@ class _MyTripsPageState extends State<MyTripsPage>
       builder: (_) => _SummarySheet(
         order: order,
         controller: _priceControllers[order.id]!,
-        onConfirm: (price) {
-          setState(() {
-            final idx = _trip!.orders.indexOf(order);
-            _trip!.orders[idx] = order.copyWith(finalPrice: price);
-          });
-        },
+        onConfirm: (price) => _store.setFinalPrice(order, price),
       ),
     );
   }
@@ -157,8 +171,12 @@ class _MyTripsPageState extends State<MyTripsPage>
       context: context,
       builder: (_) => _CompleteDialog(
         isHighSpeed: isHighSpeed,
-        onConfirm: () {
-          setState(() => _trip = _trip!.copyWith(status: TripStatus.completed));
+        // `POST /trips/{id}/complete`. The journey is over and every errand on
+        // it settles with it.
+        onConfirm: () async {
+          final ok = await _store.completeTrip();
+          if (!mounted) return;
+          if (!ok) _showError();
         },
       ),
     );
@@ -178,21 +196,42 @@ class _MyTripsPageState extends State<MyTripsPage>
 
   @override
   Widget build(BuildContext context) {
-    if (_trip == null) {
-      return _NoTripView(
-        onCreateTrip: () => Navigator.pop(context),
-      );
-    }
+    return Observer(
+      builder: (_) {
+        if (_store.isLoading && _trip == null) {
+          return const Scaffold(
+            backgroundColor: _kBg,
+            body: Padding(
+              padding: EdgeInsets.fromLTRB(16, 24, 16, 0),
+              child: SkeletonList(),
+            ),
+          );
+        }
+        if (_store.hasError && _trip == null) {
+          return Scaffold(
+            backgroundColor: _kBg,
+            body: ErrorState(
+              message: _store.errorMessage!,
+              onRetry: _loadTrip,
+            ),
+          );
+        }
+        if (_trip == null) {
+          return _NoTripView(
+            onCreateTrip: () => Navigator.pop(context),
+          );
+        }
 
-    final trip = _trip!;
-    final isCompleted = trip.status == TripStatus.completed;
+        final trip = _trip!;
 
-    return Scaffold(
-      backgroundColor: _kBg,
-      appBar: _buildAppBar(trip),
-      body: isCompleted
-          ? _CompletedView(trip: trip)
-          : _buildBody(trip),
+        return Scaffold(
+          backgroundColor: _kBg,
+          appBar: _buildAppBar(trip),
+          body: trip.isFinished
+              ? _CompletedView(trip: trip)
+              : _buildBody(trip),
+        );
+      },
     );
   }
 
@@ -238,8 +277,12 @@ class _MyTripsPageState extends State<MyTripsPage>
     switch (s) {
       case TripStatus.accepting:   return _kPrimary;
       case TripStatus.shopping:    return _kAction;
-      case TripStatus.delivering:  return const Color(0xFF1565C0);
+      case TripStatus.delivering:  return AppColors.info;
       case TripStatus.completed:   return _kTextSecondary;
+      // A cancelled trip is not a failure to warn about, it is a trip that is
+      // over — so it takes the same quiet grey a finished one does rather than
+      // the error red. The label beside it is what says which ending it was.
+      case TripStatus.cancelled:   return _kTextSecondary;
     }
   }
 
@@ -356,7 +399,7 @@ class _NoTripView extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey.shade600,
+                  color: AppColors.muted,
                   height: 1.5,
                 ),
               ),
@@ -400,15 +443,18 @@ class _TripOverviewCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
+        // Teal, not coral. This hero states *what is happening* — the trip you
+        // are running — while the committing action below it is coral. Two
+        // filled corals stacked would leave the screen with no primary.
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E7B4B), Color(0xFF2E9D5E)],
+          colors: [AppColors.secondaryHover, AppColors.secondary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: _kPrimary.withOpacity(0.3),
+            color: AppColors.secondary.withOpacity(0.3),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -648,7 +694,7 @@ class _ChecklistProgress extends StatelessWidget {
                     fontSize: 12,
                     color: checked == total && total > 0
                         ? _kPrimary
-                        : Colors.grey.shade600,
+                        : AppColors.muted,
                   ),
                 ),
               ],
@@ -731,7 +777,7 @@ class _ShoppingOrderCard extends StatelessWidget {
                       color: isDone ? _kPrimary : Colors.transparent,
                       borderRadius: BorderRadius.circular(7),
                       border: Border.all(
-                        color: isDone ? _kPrimary : Colors.grey.shade400,
+                        color: isDone ? _kPrimary : AppColors.disabled,
                         width: 2,
                       ),
                     ),
@@ -786,7 +832,7 @@ class _ShoppingOrderCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           color: isDone
-                              ? Colors.grey.shade500
+                              ? AppColors.faint
                               : _kTextPrimary,
                           decoration: isDone
                               ? TextDecoration.lineThrough
@@ -934,7 +980,7 @@ class _DeliveryOrderCard extends StatelessWidget {
               color: done ? _kPrimary : Colors.transparent,
               shape: BoxShape.circle,
               border: Border.all(
-                color: done ? _kPrimary : Colors.grey.shade400,
+                color: done ? _kPrimary : AppColors.disabled,
                 width: 2,
               ),
             ),
@@ -954,7 +1000,7 @@ class _DeliveryOrderCard extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 14,
-                  color: done ? Colors.grey.shade500 : _kTextPrimary,
+                  color: done ? AppColors.faint : _kTextPrimary,
                   decoration: done ? TextDecoration.lineThrough : null,
                 ),
               ),
@@ -965,7 +1011,7 @@ class _DeliveryOrderCard extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
-                  color: done ? Colors.grey.shade400 : _kPrimary,
+                  color: done ? AppColors.disabled : _kPrimary,
                 ),
               ),
           ],
@@ -976,7 +1022,7 @@ class _DeliveryOrderCard extends StatelessWidget {
             order.itemDescription,
             style: TextStyle(
               fontSize: 12,
-              color: done ? Colors.grey.shade400 : Colors.grey.shade600,
+              color: done ? AppColors.disabled : AppColors.muted,
               decoration: done ? TextDecoration.lineThrough : null,
             ),
           ),
@@ -985,7 +1031,7 @@ class _DeliveryOrderCard extends StatelessWidget {
             ? const Icon(Icons.check_circle_rounded,
                 color: _kPrimary, size: 22)
             : const Icon(Icons.radio_button_unchecked,
-                color: Colors.grey, size: 22),
+                color: AppColors.faint, size: 22),
       ),
     );
   }
@@ -1004,10 +1050,10 @@ class _QRSection extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF1565C0).withOpacity(0.3)),
+        border: Border.all(color: AppColors.secondary.withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1565C0).withOpacity(0.08),
+            color: AppColors.secondary.withOpacity(0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -1020,11 +1066,11 @@ class _QRSection extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE3F2FD),
+                  color: AppColors.secondarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.qr_code_2_rounded,
-                    color: Color(0xFF1565C0), size: 20),
+                    color: AppColors.secondary, size: 20),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -1069,14 +1115,14 @@ class _QRSection extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3F2FD),
+              color: AppColors.secondarySoft,
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Text(
               'PromptPay: 091-234-5678',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1565C0),
+                color: AppColors.secondary,
                 fontSize: 13,
               ),
             ),
@@ -1093,7 +1139,7 @@ class _QRSection extends StatelessWidget {
             icon: const Icon(Icons.copy_rounded, size: 14),
             label: const Text('คัดลอกเลข'),
             style: TextButton.styleFrom(
-                foregroundColor: Colors.grey.shade600,
+                foregroundColor: AppColors.muted,
                 textStyle: const TextStyle(fontSize: 12)),
           ),
         ],
@@ -1238,7 +1284,7 @@ class _BottomActionBar extends StatelessWidget {
                 icon: const Icon(Icons.location_on_rounded),
                 label: const Text('ถึงจุดนัดรับแล้ว — แจ้งทุกคน'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1565C0),
+                  backgroundColor: _kPrimary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -1326,7 +1372,7 @@ class _SummarySheetState extends State<_SummarySheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: AppColors.borderStrong,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1480,9 +1526,9 @@ class _SummarySheetState extends State<_SummarySheet> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0F4FF),
+                  color: AppColors.secondarySoft,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _kPrimary.withOpacity(0.25)),
+                  border: Border.all(color: AppColors.secondaryBorder),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1621,7 +1667,7 @@ class _SummarySheetState extends State<_SummarySheet> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _kPrimary,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade300,
+                        disabledBackgroundColor: AppColors.borderStrong,
                         elevation: 2,
                         shadowColor: _kPrimary.withOpacity(0.4),
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1728,9 +1774,7 @@ class _CompleteDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFF8E1), Color(0xFFFFF3E0)],
-                ),
+                color: AppColors.warningSoft,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                     color: _kAction.withOpacity(0.3)),
@@ -2050,12 +2094,15 @@ class _Avatar extends StatelessWidget {
   final String initial;
   const _Avatar({required this.initial});
 
+  /// A deterministic identity palette — the same person keeps the same colour.
+  /// Five *token* hues rather than five invented ones, each dark enough to
+  /// carry a white initial. The legacy orange here fought the coral beside it.
   static const _colors = [
-    Color(0xFF1E7B4B),
-    Color(0xFFF57C00),
-    Color(0xFF1565C0),
-    Color(0xFF6A1B9A),
-    Color(0xFFAD1457),
+    AppColors.secondary,
+    AppColors.warningFill,
+    AppColors.infoFill,
+    AppColors.successFill,
+    AppColors.primaryInk,
   ];
 
   @override

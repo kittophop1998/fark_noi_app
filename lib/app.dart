@@ -12,9 +12,6 @@ class App extends StatelessWidget {
       title: 'Fark Noi',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      // There is no dark mode, and that is a decision rather than an omission:
-      // the token layer is structured for one (roles, not values), but nothing
-      // declares a dark palette, and half a dark mode is worse than none.
       themeMode: ThemeMode.light,
       routerConfig: AppRouter.router,
     );

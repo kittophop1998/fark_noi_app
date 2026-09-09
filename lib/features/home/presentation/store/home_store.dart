@@ -1,5 +1,6 @@
 import 'package:mobx/mobx.dart';
 
+import '../../../../core/errors/exceptions.dart';
 import '../../domain/entities/home_entity.dart';
 import '../../domain/usecases/get_home_data_usecase.dart';
 
@@ -34,16 +35,25 @@ abstract class _HomeStore with Store {
 
   // ─── Actions ─────────────────────────────────────────
 
+  /// Loads the feed.
+  ///
+  /// [askForLocation] is false on a pull-to-refresh: a permission dialog
+  /// appearing over a list the user just tugged is the wrong moment to ask,
+  /// and the last fix — or the fallback — is what that gesture wanted anyway.
   @action
-  Future<void> fetchHomeData() async {
+  Future<void> fetchHomeData({bool askForLocation = true}) async {
     isLoading = true;
     errorMessage = null;
 
     try {
-      final result = await _getHomeData();
+      final result = await _getHomeData(askForLocation: askForLocation);
       items = ObservableList.of(result);
-    } catch (e) {
-      errorMessage = e.toString();
+    } on AppException catch (e) {
+      // The server's own sentence, already in Thai. `e.toString()` here used to
+      // put "AppException: …" on the screen.
+      errorMessage = e.message;
+    } catch (_) {
+      errorMessage = 'โหลดทริปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
     } finally {
       isLoading = false;
     }

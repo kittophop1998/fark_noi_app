@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/di/injection_container.dart';
 import '../../../../core/router/app_router.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../auth/domain/entities/auth_user.dart';
 import '../../../my_trips/domain/entities/my_trip_entity.dart';
-import '../../../my_trips/data/datasources/my_trips_mock_datasource.dart';
+import '../../../my_trips/presentation/store/my_trips_store.dart';
+import '../../domain/entities/reputation_entity.dart';
+import '../store/profile_store.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
 const _kPrimary       = AppColors.primary;
 const _kPrimaryLight  = AppColors.primarySoft;
-const _kAction        = AppColors.warning;
-const _kActionLight   = AppColors.warningSoft;
 const _kBg            = AppColors.background;
 const _kTextPrimary   = AppColors.text;
 const _kTextSecondary = AppColors.muted;
 const _kBorder        = AppColors.border;
+const _kTrust         = AppColors.secondary;
+const _kTrustDeep     = AppColors.secondaryHover;
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -24,30 +29,51 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  MyTripEntity? _activeTrip;
-  List<MyTripEntity> _completed = [];
+  late final ProfileStore _store;
+  late final MyTripsStore _trips;
 
   @override
   void initState() {
     super.initState();
+    _store = sl<ProfileStore>();
+    _trips = sl<MyTripsStore>();
     _loadData();
   }
 
   Future<void> _loadData() async {
-    final ds = MyTripsMockDataSource();
-    final active = await ds.getActiveTrip();
-    final completed = await ds.getCompletedTrips();
-    if (!mounted) return;
-    setState(() {
-      _activeTrip = active;
-      _completed = completed;
-    });
+    await Future.wait([
+      _store.load(),
+      _trips.load(),
+      _trips.loadHistory(),
+    ]);
+  }
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _ConfirmDialog(
+        title: 'ออกจากระบบ?',
+        body: 'คุณจะต้องเข้าสู่ระบบใหม่เพื่อใช้งานฝากหน่อยอีกครั้ง',
+        confirmLabel: 'ออกจากระบบ',
+        confirmColor: AppColors.dangerFill,
+      ),
+    );
+    if (confirmed != true) return;
+    // Signing out is a navigation nobody has to write: the router watches the
+    // session and sends the app back to the sign-in screen on its own.
+    await _store.signOut();
   }
 
   @override
   Widget build(BuildContext context) {
-    final activeTrip = _activeTrip;
-    final completed = _completed;
+    return Observer(builder: (_) => _build(context));
+  }
+
+  Widget _build(BuildContext context) {
+    final activeTrip = _trips.trip;
+    final completed = _trips.history;
+    final user = _store.user;
+    final reputation = _store.reputation;
 
     return Scaffold(
       backgroundColor: _kBg,
@@ -68,7 +94,11 @@ class _ProfilePageState extends State<ProfilePage> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [
           // ── Profile Card ──────────────────────────────
-          _ProfileCard(),
+          _ProfileCard(
+            user: user,
+            reputation: reputation,
+            tripCount: reputation?.completedTotal ?? 0,
+          ),
           const SizedBox(height: 16),
 
           // ── Badges ────────────────────────────────────
@@ -118,22 +148,85 @@ class _ProfilePageState extends State<ProfilePage> {
           _MenuItem(
               icon: Icons.payment_outlined,
               label: 'ข้อมูลพร้อมเพย์',
-              subtitle: '091-234-5678'),
+              // Absent means they have not set one, and no payment QR can be
+              // drawn for the errands they run — so the row says exactly that
+              // rather than showing a blank.
+              subtitle: user?.promptPayId ?? 'ยังไม่ได้ตั้งค่า'),
           _MenuItem(
               icon: Icons.star_outline_rounded,
               label: 'รีวิวที่ได้รับ',
-              subtitle: '⭐ 4.9 (32 รีวิว)'),
+              subtitle: _ratingLine(reputation)),
           _MenuItem(
-              icon: Icons.notifications_outlined,
-              label: 'การแจ้งเตือน',
-              subtitle: 'เปิดอยู่'),
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'เครดิตของฉัน',
+              subtitle: _store.credits == null
+                  ? '—'
+                  : '฿${_store.credits!.depositBalance.toStringAsFixed(0)}'),
           _MenuItem(
               icon: Icons.logout_rounded,
               label: 'ออกจากระบบ',
               subtitle: '',
-              isDestructive: true),
+              isDestructive: true,
+              onTap: _confirmSignOut),
         ],
       ),
+    );
+  }
+}
+
+/// The rating as one line, or the honest absence of one.
+String _ratingLine(ReputationEntity? reputation) {
+  if (reputation == null) return '—';
+  if (!reputation.rated) return 'ยังไม่มีรีวิว';
+  return '⭐ ${reputation.averageRating.toStringAsFixed(1)} '
+      '(${reputation.reviewCount} รีวิว)';
+}
+
+/// A destructive confirmation. Its own small dialog rather than the shared
+/// `AppNotice` family: this asks a question and returns an answer, which is a
+/// different job from telling somebody something.
+class _ConfirmDialog extends StatelessWidget {
+  const _ConfirmDialog({
+    required this.title,
+    required this.body,
+    required this.confirmLabel,
+    required this.confirmColor,
+  });
+
+  final String title;
+  final String body;
+  final String confirmLabel;
+  final Color confirmColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+          color: _kTextPrimary,
+        ),
+      ),
+      content: Text(
+        body,
+        style: const TextStyle(fontSize: 14, color: _kTextSecondary),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('ยกเลิก',
+              style: TextStyle(color: _kTextSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(
+            confirmLabel,
+            style: TextStyle(color: confirmColor, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -141,6 +234,16 @@ class _ProfilePageState extends State<ProfilePage> {
 // ─── Profile Card ─────────────────────────────────────────
 
 class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({
+    required this.user,
+    required this.reputation,
+    required this.tripCount,
+  });
+
+  final AuthUser? user;
+  final ReputationEntity? reputation;
+  final int tripCount;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -157,17 +260,19 @@ class _ProfileCard extends StatelessWidget {
             width: 68,
             height: 68,
             decoration: const BoxDecoration(
+              // Teal, not coral: an avatar is who you are, not something to
+              // tap. Identity is the trust accent's job.
               gradient: LinearGradient(
-                colors: [Color(0xFF1E7B4B), Color(0xFF2E9D5E)],
+                colors: [_kTrustDeep, _kTrust],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               shape: BoxShape.circle,
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                'ม',
-                style: TextStyle(
+                user?.initial ?? '·',
+                style: const TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
                   color: Colors.white,
@@ -180,44 +285,51 @@ class _ProfileCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'มิน สมใจ',
-                  style: TextStyle(
+                Text(
+                  user?.displayName ?? 'กำลังโหลด…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                     color: _kTextPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    const Icon(Icons.star_rounded,
-                        color: Colors.amber, size: 14),
-                    const SizedBox(width: 3),
-                    const Text(
-                      '4.9',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: _kTextPrimary,
+                // Somebody nobody has reviewed is drawn as new, never as zero:
+                // `rated: false` is not a bad score and must not read as one.
+                if (reputation?.rated == true)
+                  Row(
+                    children: [
+                      const Icon(Icons.star_rounded,
+                          color: AppColors.rating, size: 14),
+                      const SizedBox(width: 3),
+                      Text(
+                        reputation!.averageRating.toStringAsFixed(1),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: _kTextPrimary,
+                        ),
                       ),
-                    ),
-                    Text(
-                      ' · 32 รีวิว',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey.shade500),
-                    ),
-                  ],
-                ),
+                      Text(
+                        ' · ${reputation!.reviewCount} รีวิว',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.faint),
+                      ),
+                    ],
+                  )
+                else
+                  const Text(
+                    'ยังไม่มีรีวิว',
+                    style: TextStyle(fontSize: 12, color: AppColors.faint),
+                  ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    _StatChip(label: '8 ทริป', icon: Icons.directions_walk),
-                    const SizedBox(width: 6),
                     _StatChip(
-                        label: '⚡ High Speed ×3',
-                        icon: null,
-                        isOrange: true),
+                        label: '$tripCount ทริป',
+                        icon: Icons.directions_walk),
                   ],
                 ),
               ],
@@ -237,18 +349,16 @@ class _ProfileCard extends StatelessWidget {
 class _StatChip extends StatelessWidget {
   final String label;
   final IconData? icon;
-  final bool isOrange;
 
-  const _StatChip(
-      {required this.label, required this.icon, this.isOrange = false});
+  const _StatChip({required this.label, required this.icon});
 
   @override
   Widget build(BuildContext context) {
-    final color = isOrange ? _kAction : _kPrimary;
+    const color = _kPrimary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: isOrange ? _kActionLight : _kPrimaryLight,
+        color: _kPrimaryLight,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -469,7 +579,7 @@ class _EmptyTripEntry extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F3F3),
+                color: AppColors.surfaceStrong,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(Icons.add_shopping_cart_rounded,
@@ -531,7 +641,7 @@ class _HistoryCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF3F3F3),
+              color: AppColors.surfaceStrong,
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.check_circle_outline_rounded,
@@ -558,7 +668,7 @@ class _HistoryCard extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+          const Icon(Icons.star_rounded, color: AppColors.rating, size: 14),
           const SizedBox(width: 2),
           const Text('5.0',
               style: TextStyle(
@@ -579,16 +689,21 @@ class _MenuItem extends StatelessWidget {
   final String subtitle;
   final bool isDestructive;
 
+  /// Null for the rows that are not wired to anything yet — the tile still
+  /// draws, and tapping it does nothing rather than pretending to.
+  final VoidCallback? onTap;
+
   const _MenuItem({
     required this.icon,
     required this.label,
     required this.subtitle,
     this.isDestructive = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = isDestructive ? const Color(0xFFD32F2F) : _kTextPrimary;
+    final color = isDestructive ? AppColors.error : _kTextPrimary;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
@@ -609,7 +724,7 @@ class _MenuItem extends StatelessWidget {
                     fontSize: 12, color: _kTextSecondary))
             : const Icon(Icons.arrow_forward_ios_rounded,
                 size: 14, color: _kTextSecondary),
-        onTap: () {},
+        onTap: onTap,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12)),
       ),

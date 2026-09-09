@@ -3,12 +3,18 @@ import '../../domain/repositories/home_repository.dart';
 import '../datasources/home_remote_datasource.dart';
 
 class HomeRepositoryImpl implements HomeRepository {
+  const HomeRepositoryImpl({required this.remoteDataSource});
+
   final HomeRemoteDataSource remoteDataSource;
 
-  HomeRepositoryImpl({required this.remoteDataSource});
-
   @override
-  Future<List<HomeEntity>> getHomeData() async {
-    return await remoteDataSource.getHomeData();
+  Future<List<HomeEntity>> getNearbyTrips({
+    required double latitude,
+    required double longitude,
+  }) {
+    return remoteDataSource.getNearbyTrips(
+      latitude: latitude,
+      longitude: longitude,
+    );
   }
 }

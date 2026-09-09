@@ -19,12 +19,14 @@ class AppColors {
   // that ships an illegible screen:
   //
   //   brand           a *shape*: the logo plate, a map pin, an icon on a tint.
-  //                   2.91:1 under white — never a label.
-  //   primary         every filled action. 3.55:1 under white, which is what a
-  //                   button label needs and 500 cannot give.
-  //   primaryInk      coral *text* on a white or near-white surface (5.0:1).
+  //                   2.8:1 under white — never a label.
+  //   primary         every filled action, the raised centre button, the active
+  //                   tab's mark. This is the approved Coral, `#F2553D`.
+  //   primaryInk      coral *text* on a white or near-white surface (5.35:1) —
+  //                   which is why the active tab's *label* is this and not
+  //                   [primary], whose 3.42:1 a 12px Thai word cannot carry.
   //   primaryInkStrong  coral text on a coral tint — a secondary button's
-  //                   label, a selected chip (5.65:1 on [primarySoft]).
+  //                   label, a selected chip (6.05:1 on [primarySoft]).
   static const Color brand = AppPalette.primary500;
   static const Color primary = AppPalette.primary600;
   static const Color primaryHover = AppPalette.primary700;
@@ -37,13 +39,33 @@ class AppColors {
   static const Color primaryBorder = AppPalette.primary200;
   static const Color onPrimary = AppPalette.neutral0;
 
-  /// The journey accent — a destination reached, an arrival, a verified thing.
-  /// Points at the same green as [success] on purpose.
-  static const Color secondary = AppPalette.green600;
-  static const Color secondaryHover = AppPalette.green700;
-  static const Color secondaryInk = AppPalette.green800;
-  static const Color secondarySoft = AppPalette.green50;
-  static const Color secondaryBorder = AppPalette.green200;
+  // ── Trust — the deep teal ─────────────────────────────────────────────
+  //
+  // The second accent, and the one rule that keeps it from becoming a rival
+  // primary: **teal never asks, it only tells.** An identity confirmed, a
+  // payment handle, a safety note, a community signal — things the product
+  // says *about itself*. The moment a teal control wants to be tapped as the
+  // main action on a screen, it should have been coral.
+  //
+  // Deliberately not [success]: green is "this finished", teal is "this is
+  // trustworthy", and a product that moves money must not slur the two.
+  static const Color secondary = AppPalette.teal600;
+  static const Color secondaryHover = AppPalette.teal700;
+  static const Color secondaryInk = AppPalette.teal800;
+  static const Color secondarySoft = AppPalette.teal50;
+  static const Color secondaryBorder = AppPalette.teal200;
+
+  /// A *filled* teal ground — a verified plate, a trust panel's icon chip.
+  /// White on it is 6.3:1, so unlike coral it may carry a sentence.
+  static const Color secondaryFill = AppPalette.teal600;
+  static const Color secondaryForeground = AppPalette.neutral0;
+
+  /// The trust family under the name a screen actually reaches for.
+  /// One set of values, two vocabularies — as [danger] is to [error].
+  static const Color trust = secondary;
+  static const Color trustSoft = secondarySoft;
+  static const Color trustStrong = secondaryInk;
+  static const Color trustBorder = secondaryBorder;
 
   // ── Status families ───────────────────────────────────────────────────
   //
@@ -143,7 +165,7 @@ class AppColors {
   //
   // The page is warmed once, here, so the paper is warm and the chroma stays
   // on the actions.
-  static const Color background = Color(0xFFFFFAF8);
+  static const Color background = Color(0xFFFFF8F4);
   static const Color backgroundSubtle = AppPalette.neutral50;
   static const Color surface = AppPalette.neutral0;
   static const Color surfaceRaised = AppPalette.neutral0;
@@ -162,9 +184,9 @@ class AppColors {
   //
   // Nothing in the product is pure black.
   //
-  //   text      headings and body          16.5:1
+  //   text      headings and body          14.4:1  (charcoal `#252A31`)
   //   muted     supporting copy             7.3:1
-  //   faint     metadata, timestamps        4.7:1
+  //   faint     metadata, timestamps        5.0:1   (muted gray `#68707C`)
   //   disabled  an unavailable control's label
   //   inverse   on a filled dark or coloured ground
   static const Color text = AppPalette.neutral900;
@@ -185,15 +207,15 @@ class AppColors {
   static const Color borderStrong = AppPalette.neutral300;
 
   /// The hairline on an object resting on the *page* rather than on white.
-  /// A cool grey ring around a white card floating on `#fffaf8` reads as a
+  /// A cool grey ring around a white card floating on `#fff8f4` reads as a
   /// seam drawn over the paper; this is the same hairline warmed to the page's
   /// hue, so the edge reads as where the card stops.
-  static const Color borderWarm = Color(0xFFEEE4DF);
+  static const Color borderWarm = Color(0xFFEFE3DA);
   static const Color borderPrimary = AppPalette.primary200;
   static const Color divider = AppPalette.neutral100;
 
   static const Color focus = AppPalette.primary600;
-  static const Color scrim = Color(0x7A0B0D0F); // rgba(11, 13, 15, 0.48)
+  static const Color scrim = Color(0x7A14181D); // rgba(20, 24, 29, 0.48)
 
   // ── Navigation ────────────────────────────────────────────────────────
   //

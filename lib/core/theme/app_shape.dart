@@ -75,7 +75,7 @@ class AppShadow {
 
   static const List<BoxShadow> xs = [
     BoxShadow(
-      color: Color(0x0F191C1F), // rgba(25, 28, 31, 0.06)
+      color: Color(0x0F252A31), // rgba(37, 42, 49, 0.06)
       blurRadius: 2,
       offset: Offset(0, 1),
     ),
@@ -83,12 +83,12 @@ class AppShadow {
 
   static const List<BoxShadow> sm = [
     BoxShadow(
-      color: Color(0x0F191C1F),
+      color: Color(0x0F252A31),
       blurRadius: 8,
       offset: Offset(0, 2),
     ),
     BoxShadow(
-      color: Color(0x0A191C1F), // rgba(25, 28, 31, 0.04)
+      color: Color(0x0A252A31), // rgba(37, 42, 49, 0.04)
       blurRadius: 2,
       offset: Offset(0, 1),
     ),
@@ -96,7 +96,7 @@ class AppShadow {
 
   static const List<BoxShadow> md = [
     BoxShadow(
-      color: Color(0x1A191C1F), // rgba(25, 28, 31, 0.10)
+      color: Color(0x1A252A31), // rgba(37, 42, 49, 0.10)
       blurRadius: 24,
       offset: Offset(0, 8),
     ),
@@ -104,7 +104,7 @@ class AppShadow {
 
   static const List<BoxShadow> sheet = [
     BoxShadow(
-      color: Color(0x1A191C1F),
+      color: Color(0x1A252A31),
       blurRadius: 24,
       offset: Offset(0, -8),
     ),
