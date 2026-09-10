@@ -1,15 +1,19 @@
-import 'dart:math' as math;
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:flutter_mobx/flutter_mobx.dart';
 
 import '../../domain/entities/my_trip_entity.dart';
 import '../store/my_trips_store.dart';
 import '../../../../core/di/injection_container.dart';
+import '../../../../core/session/session_controller.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../shared/models/prompt_pay_config.dart';
+import '../../../../core/utils/promptpay_qr.dart';
+import '../../../../shared/services/media_upload_service.dart';
 import '../../../../shared/widgets/app_states.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
@@ -63,14 +67,24 @@ class _MyTripsPageState extends State<MyTripsPage>
     // a fresh controller on every read would drop whatever the runner was
     // halfway through typing into it.
     for (final order in _trip?.orders ?? const <MyOrderItem>[]) {
-      _priceControllers.putIfAbsent(
-        order.id,
-        () => TextEditingController(
-          text: order.finalPrice?.toStringAsFixed(0) ?? '',
-        ),
-      );
+      _controllerFor(order);
     }
     setState(() {});
+  }
+
+  /// The price controller for one errand, created on first use.
+  ///
+  /// [_loadTrip] warms this map for every order already on the trip, but an
+  /// order the runner just accepted reaches the checklist through the store's
+  /// own reload — not through [_loadTrip] — so a controller cannot be assumed
+  /// to exist yet by the time the summary sheet opens for it.
+  TextEditingController _controllerFor(MyOrderItem order) {
+    return _priceControllers.putIfAbsent(
+      order.id,
+      () => TextEditingController(
+        text: order.finalPrice?.toStringAsFixed(0) ?? '',
+      ),
+    );
   }
 
   @override
@@ -132,9 +146,28 @@ class _MyTripsPageState extends State<MyTripsPage>
     );
   }
 
-  void _toggleChecked(MyOrderItem order) => _store.toggleChecked(order);
+  Future<void> _acceptOrder(MyOrderItem order) async {
+    final ok = await _store.acceptOrder(order.id);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        _greenSnack('รับคำฝากของคุณ${order.buyerName}แล้ว'),
+      );
+    } else {
+      _showError();
+    }
+  }
 
-  void _toggleDelivered(MyOrderItem order) => _store.toggleDelivered(order);
+  Future<void> _rejectOrder(MyOrderItem order) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => _RejectDialog(buyerName: order.buyerName),
+    );
+    if (reason == null) return;
+    final ok = await _store.rejectOrder(order.id, reason: reason);
+    if (!mounted) return;
+    if (!ok) _showError();
+  }
 
   void _openSummarySheet(MyOrderItem order) {
     showModalBottomSheet(
@@ -143,10 +176,59 @@ class _MyTripsPageState extends State<MyTripsPage>
       backgroundColor: Colors.transparent,
       builder: (_) => _SummarySheet(
         order: order,
-        controller: _priceControllers[order.id]!,
-        onConfirm: (price) => _store.setFinalPrice(order, price),
+        controller: _controllerFor(order),
+        onConfirm: (price, proofMediaIds) async {
+          var ok = await _store.purchaseOrder(
+            order,
+            actualPrice: price,
+            proofMediaIds: proofMediaIds,
+          );
+          if (ok) {
+            // The runner is done at this shop the moment the receipt is
+            // recorded — this app has no separate "left the store" tap, so
+            // PURCHASED moves straight to DELIVERING. Its own failure has to
+            // sink `ok`: the receipt was recorded either way, but the sheet's
+            // success message and dismissal are wrong if the order is still
+            // sitting in PURCHASED.
+            ok = await _store.startDelivery(order.id);
+          }
+          if (!mounted) return false;
+          if (!ok) _showError();
+          return ok;
+        },
       ),
     );
+  }
+
+  Future<void> _confirmDelivery(MyOrderItem order) async {
+    final proof = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DeliveryProofSheet(order: order),
+    );
+    if (proof == null || proof.isEmpty || !mounted) return;
+    final ok = await _store.deliverOrder(order.id, proofMediaIds: proof);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        _greenSnack('ส่งของให้คุณ${order.buyerName}แล้ว รอยืนยันรับเงิน'),
+      );
+    } else {
+      _showError();
+    }
+  }
+
+  Future<void> _confirmPaymentReceived(MyOrderItem order) async {
+    final ok = await _store.completeOrder(order.id);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        _greenSnack('ยืนยันรับเงินจากคุณ${order.buyerName}แล้ว 🎉'),
+      );
+    } else {
+      _showError();
+    }
   }
 
   void _completeTrip() {
@@ -288,6 +370,11 @@ class _MyTripsPageState extends State<MyTripsPage>
 
   Widget _buildBody(MyTripEntity trip) {
     final isDelivering = trip.status == TripStatus.delivering;
+    final pending = trip.orders.where((o) => o.isPending).toList();
+    final active = trip.orders.where((o) => !o.isPending && !o.isClosed).toList();
+    final closed = trip.orders.where((o) => o.isClosed).toList();
+    final deliveredCount = active.where((o) => o.isAwaitingPayment || o.isCompleted).length;
+    final purchasedCount = active.where((o) => !o.isPending).length;
 
     return Column(
       children: [
@@ -305,7 +392,25 @@ class _MyTripsPageState extends State<MyTripsPage>
 
               // ── QR Section (delivering mode) ──────────
               if (isDelivering) ...[
-                _QRSection(trip: trip),
+                const _QRSection(),
+                const SizedBox(height: 16),
+              ],
+
+              // ── Pending Requests ───────────────────────
+              if (pending.isNotEmpty) ...[
+                _SectionHeader(
+                  icon: Icons.mark_email_unread_outlined,
+                  label: 'คำขอใหม่ (${pending.length})',
+                ),
+                const SizedBox(height: 10),
+                ...pending.map((order) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _PendingOrderCard(
+                        order: order,
+                        onAccept: () => _acceptOrder(order),
+                        onReject: () => _rejectOrder(order),
+                      ),
+                    )),
                 const SizedBox(height: 16),
               ],
 
@@ -313,23 +418,39 @@ class _MyTripsPageState extends State<MyTripsPage>
               _SectionHeader(
                 icon: isDelivering ? Icons.local_shipping_outlined : Icons.checklist_rounded,
                 label: isDelivering
-                    ? 'รอมารับของ (${trip.orders.length - trip.deliveredCount}/${trip.orders.length})'
-                    : 'รายการสั่งซื้อ (${trip.checkedCount}/${trip.orders.length})',
+                    ? 'รอมารับของ ($deliveredCount/${active.length})'
+                    : 'รายการสั่งซื้อ ($purchasedCount/${active.length})',
               ),
               const SizedBox(height: 10),
-              ...trip.orders.map((order) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: isDelivering
-                        ? _DeliveryOrderCard(
-                            order: order,
-                            onToggleDelivered: _toggleDelivered,
-                          )
-                        : _ShoppingOrderCard(
-                            order: order,
-                            onToggle: _toggleChecked,
-                            onSummary: _openSummarySheet,
-                          ),
-                  )),
+              if (active.isEmpty)
+                const _EmptyActiveOrders()
+              else
+                ...active.map((order) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: isDelivering
+                          ? _DeliveryOrderCard(
+                              order: order,
+                              onDeliver: () => _confirmDelivery(order),
+                              onConfirmPayment: () =>
+                                  _confirmPaymentReceived(order),
+                            )
+                          : _ShoppingOrderCard(
+                              order: order,
+                              onSummary: () => _openSummarySheet(order),
+                            ),
+                    )),
+              if (closed.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _SectionHeader(
+                  icon: Icons.block_rounded,
+                  label: 'ปฏิเสธ/ยกเลิก (${closed.length})',
+                ),
+                const SizedBox(height: 10),
+                ...closed.map((order) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _ClosedOrderRow(order: order),
+                    )),
+              ],
             ],
           ),
         ),
@@ -635,7 +756,7 @@ class _ChecklistProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final checked = trip.checkedCount;
-    final total = trip.orders.length;
+    final total = trip.activeOrders.length;
     final pct = total > 0 ? (checked / total * 100).round() : 0;
 
     return Container(
@@ -736,12 +857,10 @@ class _SectionHeader extends StatelessWidget {
 
 class _ShoppingOrderCard extends StatelessWidget {
   final MyOrderItem order;
-  final ValueChanged<MyOrderItem> onToggle;
-  final ValueChanged<MyOrderItem> onSummary;
+  final VoidCallback onSummary;
 
   const _ShoppingOrderCard({
     required this.order,
-    required this.onToggle,
     required this.onSummary,
   });
 
@@ -766,9 +885,11 @@ class _ShoppingOrderCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Checkbox
+                // Checkbox — reflects the order's real status; tapping it
+                // opens the same "สรุปยอด" flow the button below does, since
+                // marking ซื้อแล้ว for real requires a receipt photo.
                 GestureDetector(
-                  onTap: () => onToggle(order),
+                  onTap: isDone ? null : onSummary,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     width: 26,
@@ -900,7 +1021,7 @@ class _ShoppingOrderCard extends StatelessWidget {
                 // Summary button
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: () => onSummary(order),
+                    onPressed: onSummary,
                     icon: const Icon(Icons.receipt_long_outlined, size: 14),
                     label: Text(
                       order.finalPrice != null
@@ -951,74 +1072,66 @@ class _ShoppingOrderCard extends StatelessWidget {
 
 class _DeliveryOrderCard extends StatelessWidget {
   final MyOrderItem order;
-  final ValueChanged<MyOrderItem> onToggleDelivered;
 
-  const _DeliveryOrderCard(
-      {required this.order, required this.onToggleDelivered});
+  /// Not yet delivered — opens the photo + GPS confirmation.
+  final VoidCallback onDeliver;
+
+  /// Delivered and the money is owed — the runner says it arrived.
+  final VoidCallback onConfirmPayment;
+
+  const _DeliveryOrderCard({
+    required this.order,
+    required this.onDeliver,
+    required this.onConfirmPayment,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final done = order.isDelivered;
+    final awaitingPayment = order.isAwaitingPayment;
+    final done = order.isCompleted;
+    final settled = awaitingPayment || done;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       decoration: BoxDecoration(
-        color: done ? _kPrimaryLight : Colors.white,
+        color: settled ? _kPrimaryLight : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: done ? _kPrimary.withOpacity(0.4) : _kBorder,
-            width: done ? 1.5 : 1),
+            color: settled ? _kPrimary.withOpacity(0.4) : _kBorder,
+            width: settled ? 1.5 : 1),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-        leading: GestureDetector(
-          onTap: () => onToggleDelivered(order),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: done ? _kPrimary : Colors.transparent,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: done ? _kPrimary : AppColors.disabled,
-                width: 2,
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _Avatar(initial: order.buyerInitial),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  order.buyerName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: done ? AppColors.faint : _kTextPrimary,
+                    decoration: done ? TextDecoration.lineThrough : null,
+                  ),
+                ),
               ),
-            ),
-            child: done
-                ? const Icon(Icons.check_rounded,
-                    color: Colors.white, size: 18)
-                : null,
+              if (order.finalPrice != null)
+                Text(
+                  '฿${order.finalPrice!.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: done ? AppColors.disabled : _kPrimary,
+                  ),
+                ),
+            ],
           ),
-        ),
-        title: Row(
-          children: [
-            _Avatar(initial: order.buyerInitial),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                order.buyerName,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: done ? AppColors.faint : _kTextPrimary,
-                  decoration: done ? TextDecoration.lineThrough : null,
-                ),
-              ),
-            ),
-            if (order.finalPrice != null)
-              Text(
-                '฿${order.finalPrice!.toStringAsFixed(0)}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                  color: done ? AppColors.disabled : _kPrimary,
-                ),
-              ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
+          const SizedBox(height: 4),
+          Text(
             order.itemDescription,
             style: TextStyle(
               fontSize: 12,
@@ -1026,12 +1139,64 @@ class _DeliveryOrderCard extends StatelessWidget {
               decoration: done ? TextDecoration.lineThrough : null,
             ),
           ),
-        ),
-        trailing: done
-            ? const Icon(Icons.check_circle_rounded,
-                color: _kPrimary, size: 22)
-            : const Icon(Icons.radio_button_unchecked,
-                color: AppColors.faint, size: 22),
+          const SizedBox(height: 10),
+          if (done)
+            const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: _kPrimary, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'ปิดงานแล้ว — รับเงินเรียบร้อย',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _kPrimary),
+                ),
+              ],
+            )
+          else if (awaitingPayment)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: onConfirmPayment,
+                icon: const Icon(Icons.payments_rounded, size: 16),
+                label: Text(
+                  order.paymentAmount != null
+                      ? 'ยืนยันรับเงิน ฿${order.paymentAmount!.toStringAsFixed(0)} แล้ว'
+                      : 'ยืนยันรับเงินแล้ว',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w800),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kPrimary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onDeliver,
+                icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                label: const Text(
+                  'ถ่ายรูปส่งของ',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _kAction,
+                  side: const BorderSide(color: _kAction),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1039,12 +1204,21 @@ class _DeliveryOrderCard extends StatelessWidget {
 
 // ─── QR Section ──────────────────────────────────────────
 
+/// The runner's own receiving QR — a real PromptPay payload built on-device
+/// from `session.user.promptPayId`, not tied to one order's amount. A person
+/// scanning it enters what they owe themselves, which is what a general
+/// "pay me" code is for; a per-order amount belongs on the DELIVERED card's
+/// own confirm-payment step instead, where `OrderPayment.amount` is real.
 class _QRSection extends StatelessWidget {
-  final MyTripEntity trip;
-  const _QRSection({required this.trip});
+  const _QRSection();
 
   @override
   Widget build(BuildContext context) {
+    final user = sl<SessionController>().user;
+    final promptPayId = user?.promptPayId ?? '';
+    final payload =
+        promptPayId.isEmpty ? '' : PromptPayQr.build(promptPayId: promptPayId);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -1095,128 +1269,73 @@ class _QRSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          // QR Placeholder
-          Container(
-            width: 180,
-            height: 180,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _kBorder, width: 2),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: CustomPaint(
-                painter: _QRMockPainter(),
+          if (payload.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _kErrorLight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'ยังไม่ได้ตั้งค่าพร้อมเพย์ — ไปที่โปรไฟล์เพื่อเพิ่มเบอร์รับเงิน',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 12,
+                    color: _kError,
+                    fontWeight: FontWeight.w600),
+              ),
+            )
+          else ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _kBorder, width: 2),
+              ),
+              child: QrImageView(
+                data: payload,
+                version: QrVersions.auto,
+                size: 180,
+                gapless: true,
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.secondarySoft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              'PromptPay: 091-234-5678',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: AppColors.secondary,
-                fontSize: 13,
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.secondarySoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'PromptPay: $promptPayId',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.secondary,
+                  fontSize: 13,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: () {
-              Clipboard.setData(
-                  const ClipboardData(text: '0912345678'));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('คัดลอกเลขพร้อมเพย์แล้ว')),
-              );
-            },
-            icon: const Icon(Icons.copy_rounded, size: 14),
-            label: const Text('คัดลอกเลข'),
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.muted,
-                textStyle: const TextStyle(fontSize: 12)),
-          ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: promptPayId));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('คัดลอกเลขพร้อมเพย์แล้ว')),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, size: 14),
+              label: const Text('คัดลอกเลข'),
+              style: TextButton.styleFrom(
+                  foregroundColor: AppColors.muted,
+                  textStyle: const TextStyle(fontSize: 12)),
+            ),
+          ],
         ],
       ),
     );
   }
-}
-
-/// วาด QR mock pattern ด้วย CustomPainter
-class _QRMockPainter extends CustomPainter {
-  static final _rng = math.Random(42);
-  static late final List<Offset> _cells;
-  static bool _init = false;
-
-  static void _buildCells(Size size) {
-    if (_init) return;
-    _init = true;
-    const int count = 17;
-    final cellSize = size.width / count;
-    _cells = [];
-    for (int r = 0; r < count; r++) {
-      for (int c = 0; c < count; c++) {
-        // corner finder patterns
-        final inCorner = (r < 7 && c < 7) ||
-            (r < 7 && c >= count - 7) ||
-            (r >= count - 7 && c < 7);
-        if (inCorner) {
-          final onCornerEdge = (r < 7 && c < 7) &&
-              (r == 0 || r == 6 || c == 0 || c == 6);
-          final onCornerInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-          if (onCornerEdge || onCornerInner) {
-            _cells.add(Offset(c * cellSize, r * cellSize));
-          }
-          continue;
-        }
-        if (_rng.nextBool()) {
-          _cells.add(Offset(c * cellSize, r * cellSize));
-        }
-      }
-    }
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    _buildCells(size);
-    final count = 17;
-    final cellSize = size.width / count;
-    final paint = Paint()..color = Colors.black;
-
-    // draw finder patterns manually
-    _drawFinder(canvas, paint, 0, 0, cellSize);
-    _drawFinder(canvas, paint, (count - 7) * cellSize, 0, cellSize);
-    _drawFinder(canvas, paint, 0, (count - 7) * cellSize, cellSize);
-
-    // draw random data cells
-    for (final cell in _cells) {
-      canvas.drawRect(
-        Rect.fromLTWH(cell.dx + 1, cell.dy + 1, cellSize - 2, cellSize - 2),
-        paint,
-      );
-    }
-  }
-
-  void _drawFinder(Canvas canvas, Paint paint, double x, double y, double cs) {
-    // outer 7×7 border
-    paint.style = PaintingStyle.stroke;
-    paint.strokeWidth = cs;
-    canvas.drawRect(
-        Rect.fromLTWH(x + cs / 2, y + cs / 2, 6 * cs, 6 * cs), paint);
-    // inner 3×3
-    paint.style = PaintingStyle.fill;
-    canvas.drawRect(
-        Rect.fromLTWH(x + 2 * cs, y + 2 * cs, 3 * cs, 3 * cs), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─── Bottom Action Bar ───────────────────────────────────
@@ -1332,7 +1451,12 @@ class _BottomActionBar extends StatelessWidget {
 class _SummarySheet extends StatefulWidget {
   final MyOrderItem order;
   final TextEditingController controller;
-  final ValueChanged<double> onConfirm;
+
+  /// Uploads the receipt(s) and calls `POST /orders/{id}/purchase`. Returns
+  /// whether it succeeded — the sheet only closes on true, so a rejected
+  /// price or a failed upload leaves the runner exactly where they were.
+  final Future<bool> Function(double actualPrice, List<String> proofMediaIds)
+      onConfirm;
 
   const _SummarySheet({
     required this.order,
@@ -1345,9 +1469,54 @@ class _SummarySheet extends StatefulWidget {
 }
 
 class _SummarySheetState extends State<_SummarySheet> {
+  final _photos = <File>[];
+  bool _submitting = false;
+
   double get _actualPrice =>
       double.tryParse(widget.controller.text.trim()) ?? 0;
-  double get _total => _actualPrice + PromptPayConfig.deliveryFee;
+  double get _total => _actualPrice + widget.order.rewardAmount;
+
+  Future<void> _addPhoto(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 85);
+    if (picked == null) return;
+    setState(() => _photos.add(File(picked.path)));
+  }
+
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+    try {
+      final mediaIds = await sl<MediaUploadService>().uploadAll(
+        files: _photos,
+        purpose: MediaPurpose.orderProof,
+      );
+      final ok = await widget.onConfirm(_actualPrice, mediaIds);
+      if (!mounted) return;
+      if (ok) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '📣 แจ้ง ${widget.order.buyerName} ยอด ฿${_total.toStringAsFixed(0)} แล้ว'),
+            backgroundColor: _kPrimary,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (_) {
+      // The page's own error banner (from the store's `_act`) covers a
+      // purchase-call failure; an upload failure alone still needs a word
+      // here, since it never reaches the store at all.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1488,9 +1657,9 @@ class _SummarySheetState extends State<_SummarySheet> {
                     ),
                     const SizedBox(height: 6),
                     _PriceRow(
-                      label: '+ ค่าหิ้ว',
+                      label: '+ ค่ารับฝาก',
                       value:
-                          '${PromptPayConfig.deliveryFee.toStringAsFixed(0)} บาท',
+                          '${widget.order.rewardAmount.toStringAsFixed(0)} บาท',
                     ),
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8),
@@ -1522,100 +1691,20 @@ class _SummarySheetState extends State<_SummarySheet> {
               ),
               const SizedBox(height: 16),
 
-              // PromptPay Section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.secondarySoft,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.secondaryBorder),
+              // Receipt photo — required by `PurchaseOrderRequest.proofMediaIds`
+              const Text(
+                'รูปใบเสร็จ (จำเป็น)',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _kTextSecondary,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: _kPrimaryLight,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.qr_code_rounded,
-                              size: 18, color: _kPrimary),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'PromptPay',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: _kPrimary,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _kPrimary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            'ของผู้รับหิ้ว',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: _kPrimary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _PromptPayRow(
-                      icon: Icons.phone_rounded,
-                      label: 'เบอร์โทรศัพท์',
-                      value: PromptPayConfig.phone,
-                      copyable: true,
-                    ),
-                    const SizedBox(height: 8),
-                    _PromptPayRow(
-                      icon: Icons.person_rounded,
-                      label: 'ชื่อบัญชี',
-                      value: PromptPayConfig.accountName,
-                    ),
-                    const SizedBox(height: 12),
-                    // Mock QR placeholder
-                    Center(
-                      child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: _kPrimary.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.qr_code_2_rounded,
-                                size: 60, color: _kPrimary),
-                            const SizedBox(height: 4),
-                            Text(
-                              'QR PromptPay',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: _kPrimary.withOpacity(0.7)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              ),
+              const SizedBox(height: 6),
+              _PhotoPicker(
+                photos: _photos,
+                onAdd: _addPhoto,
+                onRemove: (i) => setState(() => _photos.removeAt(i)),
               ),
               const SizedBox(height: 20),
 
@@ -1641,24 +1730,19 @@ class _SummarySheetState extends State<_SummarySheet> {
                   Expanded(
                     flex: 3,
                     child: ElevatedButton.icon(
-                      onPressed: _actualPrice > 0
-                          ? () {
-                              widget.onConfirm(_actualPrice);
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      '📣 แจ้ง ${widget.order.buyerName} ยอด ฿${_actualPrice.toStringAsFixed(0)} แล้ว'),
-                                  backgroundColor: _kPrimary,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(12)),
-                                ),
-                              );
-                            }
+                      onPressed: (_actualPrice > 0 &&
+                              _photos.isNotEmpty &&
+                              !_submitting)
+                          ? _submit
                           : null,
-                      icon: const Icon(Icons.send_rounded, size: 16),
+                      icon: _submitting
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.send_rounded, size: 16),
                       label: const Text(
                         'ส่งยอดและแจ้งลูกค้า',
                         style: TextStyle(
@@ -2019,70 +2103,429 @@ class _PriceRow extends StatelessWidget {
   }
 }
 
-// ─── PromptPay Row ───────────────────────────────────────
+// ─── Photo Picker ─────────────────────────────────────────
 
-class _PromptPayRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final bool copyable;
+/// Camera-or-gallery tiles feeding one upload list, shared by the purchase
+/// receipt and the delivery-proof sheets — both send `proofMediaIds` and
+/// differ only in what purpose the media is uploaded under.
+class _PhotoPicker extends StatelessWidget {
+  final List<File> photos;
+  final Future<void> Function(ImageSource source) onAdd;
+  final void Function(int index) onRemove;
 
-  const _PromptPayRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.copyable = false,
+  const _PhotoPicker({
+    required this.photos,
+    required this.onAdd,
+    required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: [
-        Icon(icon, size: 15, color: _kPrimary),
-        const SizedBox(width: 6),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 12,
-                color: _kTextSecondary,
-                fontWeight: FontWeight.w500)),
-        const SizedBox(width: 6),
-        Text(value,
-            style: const TextStyle(
-                fontSize: 13,
-                color: _kPrimary,
-                fontWeight: FontWeight.w700)),
-        if (copyable) ...[
-          const Spacer(),
-          GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: value));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('คัดลอกเบอร์แล้ว ✅'),
-                  duration: Duration(seconds: 1),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _kPrimaryLight,
-                borderRadius: BorderRadius.circular(8),
+        for (var i = 0; i < photos.length; i++)
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(photos[i],
+                    width: 84, height: 84, fit: BoxFit.cover),
               ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.copy_rounded, size: 12, color: _kPrimary),
-                  SizedBox(width: 3),
-                  Text('คัดลอก',
-                      style: TextStyle(fontSize: 11, color: _kPrimary)),
-                ],
+              Positioned(
+                top: -6,
+                right: -6,
+                child: GestureDetector(
+                  onTap: () => onRemove(i),
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                        color: Colors.black54, shape: BoxShape.circle),
+                    child: const Icon(Icons.close_rounded,
+                        size: 14, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        GestureDetector(
+          onTap: () => _pick(context),
+          child: Container(
+            width: 84,
+            height: 84,
+            decoration: BoxDecoration(
+              color: _kBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _kBorder),
+            ),
+            child: const Icon(Icons.add_a_photo_outlined,
+                color: _kTextSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _pick(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('ถ่ายรูป'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onAdd(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('เลือกจากคลังภาพ'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                onAdd(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Pending Order Card (Accept / Reject) ────────────────
+
+class _PendingOrderCard extends StatelessWidget {
+  final MyOrderItem order;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  const _PendingOrderCard({
+    required this.order,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _kActionLight,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kAction.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _Avatar(initial: order.buyerInitial),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  order.buyerName,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: _kTextPrimary),
+                ),
+              ),
+              if (order.rewardAmount > 0)
+                Text(
+                  'ค่ารับฝาก ฿${order.rewardAmount.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _kAction),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(order.itemDescription,
+              style: const TextStyle(fontSize: 13, color: _kTextPrimary)),
+          if (order.note != null) ...[
+            const SizedBox(height: 4),
+            Text('โน้ต: ${order.note}',
+                style: const TextStyle(
+                    fontSize: 11,
+                    color: _kTextSecondary,
+                    fontStyle: FontStyle.italic)),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onReject,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    side: const BorderSide(color: AppColors.error),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('ปฏิเสธ',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: onAccept,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kPrimary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('รับคำฝากนี้',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Closed Order Row (rejected / cancelled) ─────────────
+
+class _ClosedOrderRow extends StatelessWidget {
+  final MyOrderItem order;
+  const _ClosedOrderRow({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (order.status) {
+      'REJECTED' => 'ปฏิเสธแล้ว',
+      'CANCELLED' => 'ยกเลิกแล้ว',
+      _ => 'หมดเวลาแล้ว',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kBorder),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${order.buyerName} · ${order.itemDescription}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.disabled,
+                decoration: TextDecoration.lineThrough,
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.disabled)),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyActiveOrders extends StatelessWidget {
+  const _EmptyActiveOrders();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      alignment: Alignment.center,
+      child: const Text(
+        'ยังไม่มีคำฝากที่รับไว้ในทริปนี้',
+        style: TextStyle(fontSize: 13, color: _kTextSecondary),
+      ),
+    );
+  }
+}
+
+// ─── Delivery Proof Sheet ─────────────────────────────────
+
+/// Photos for `DeliverOrderRequest.proofMediaIds`. The coordinate travels
+/// with the call itself — `TripActionsUseCase.deliverOrder` resolves it —
+/// so this sheet only has to get the photographs uploaded and hand back
+/// their ids.
+class _DeliveryProofSheet extends StatefulWidget {
+  final MyOrderItem order;
+  const _DeliveryProofSheet({required this.order});
+
+  @override
+  State<_DeliveryProofSheet> createState() => _DeliveryProofSheetState();
+}
+
+class _DeliveryProofSheetState extends State<_DeliveryProofSheet> {
+  final _photos = <File>[];
+  bool _submitting = false;
+
+  Future<void> _addPhoto(ImageSource source) async {
+    final picked =
+        await ImagePicker().pickImage(source: source, imageQuality: 85);
+    if (picked == null) return;
+    setState(() => _photos.add(File(picked.path)));
+  }
+
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+    try {
+      final mediaIds = await sl<MediaUploadService>().uploadAll(
+        files: _photos,
+        purpose: MediaPurpose.orderProof,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(mediaIds);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง')),
+        );
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            20, 16, 20, MediaQuery.of(context).padding.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.borderStrong,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'ถ่ายรูปส่งของให้คุณ${widget.order.buyerName}',
+              style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: _kTextPrimary),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'ระบบจะบันทึกตำแหน่งปัจจุบันของคุณไว้เป็นหลักฐานการส่งด้วย',
+              style: TextStyle(fontSize: 12, color: _kTextSecondary),
+            ),
+            const SizedBox(height: 16),
+            _PhotoPicker(
+              photos: _photos,
+              onAdd: _addPhoto,
+              onRemove: (i) => setState(() => _photos.removeAt(i)),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed:
+                    (_photos.isNotEmpty && !_submitting) ? _submit : null,
+                icon: _submitting
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.location_on_rounded, size: 16),
+                label: const Text(
+                  'ยืนยันการส่งของ',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kPrimary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.borderStrong,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Reject Dialog ────────────────────────────────────────
+
+class _RejectDialog extends StatefulWidget {
+  final String buyerName;
+  const _RejectDialog({required this.buyerName});
+
+  @override
+  State<_RejectDialog> createState() => _RejectDialogState();
+}
+
+class _RejectDialogState extends State<_RejectDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text('ปฏิเสธคำฝากของคุณ${widget.buyerName}?',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+      content: TextField(
+        controller: _controller,
+        maxLength: 200,
+        decoration: const InputDecoration(
+          hintText: 'เหตุผล (ไม่บังคับ)',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('ยกเลิก'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('ปฏิเสธ',
+              style: TextStyle(color: AppColors.error)),
+        ),
       ],
     );
   }

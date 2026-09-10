@@ -107,3 +107,86 @@ class CreditBalanceEntity extends Equatable {
   List<Object?> get props =>
       [depositBalance, depositReserved, earningBalance, pendingEarnings];
 }
+
+/// One `Review` — a rating either side of a finished errand left the other.
+class ReviewEntity extends Equatable {
+  const ReviewEntity({
+    required this.id,
+    required this.reviewerName,
+    this.reviewerAvatarUrl,
+    required this.role,
+    required this.rating,
+    this.comment,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String reviewerName;
+  final String? reviewerAvatarUrl;
+
+  /// `REQUESTER` — left by somebody rating this person as their runner —
+  /// or `RUNNER`, the other way round.
+  final String role;
+  final int rating;
+  final String? comment;
+  final DateTime? createdAt;
+
+  factory ReviewEntity.fromJson(Map<String, dynamic> json) {
+    final reviewer = json['reviewer'] is Map
+        ? Map<String, dynamic>.from(json['reviewer'] as Map)
+        : const <String, dynamic>{};
+    return ReviewEntity(
+      id: json['id']?.toString() ?? '',
+      reviewerName: (reviewer['displayName'] as String?)?.trim().isNotEmpty ==
+              true
+          ? reviewer['displayName'] as String
+          : 'ผู้ใช้',
+      reviewerAvatarUrl: reviewer['avatarUrl'] as String?,
+      role: json['role'] as String? ?? 'REQUESTER',
+      rating: (json['rating'] as num?)?.toInt() ?? 0,
+      comment: (json['comment'] as String?)?.isNotEmpty == true
+          ? json['comment'] as String
+          : null,
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
+    );
+  }
+
+  @override
+  List<Object?> get props =>
+      [id, reviewerName, reviewerAvatarUrl, role, rating, comment, createdAt];
+}
+
+/// `UserReviews` — somebody's whole standing plus the reviews behind it.
+class UserReviewsEntity extends Equatable {
+  const UserReviewsEntity({
+    required this.reputation,
+    required this.items,
+    this.total = 0,
+  });
+
+  final ReputationEntity reputation;
+  final List<ReviewEntity> items;
+  final int total;
+
+  factory UserReviewsEntity.fromJson(Map<String, dynamic> json) {
+    final rating = json['rating'] is Map
+        ? Map<String, dynamic>.from(json['rating'] as Map)
+        : const <String, dynamic>{};
+    final items = (json['items'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((e) => ReviewEntity.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    return UserReviewsEntity(
+      reputation: ReputationEntity(
+        averageRating: (rating['averageRating'] as num?)?.toDouble() ?? 0,
+        reviewCount: (rating['reviewCount'] as num?)?.toInt() ?? 0,
+        rated: rating['rated'] as bool? ?? false,
+      ),
+      items: items,
+      total: (json['total'] as num?)?.toInt() ?? items.length,
+    );
+  }
+
+  @override
+  List<Object?> get props => [reputation, items, total];
+}

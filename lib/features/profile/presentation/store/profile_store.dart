@@ -64,6 +64,38 @@ abstract class _ProfileStore with Store {
     }
   }
 
+  @observable
+  bool isSaving = false;
+
+  /// `PATCH /me`, then a re-read — [SessionController.refreshUser] is the one
+  /// copy of the signed-in user, so nothing here patches a local one.
+  /// Returns whether it succeeded, for a sheet to decide whether to close.
+  @action
+  Future<bool> updateProfile({
+    String? displayName,
+    String? promptPayId,
+    String? avatarMediaId,
+    bool? removeAvatar,
+  }) async {
+    isSaving = true;
+    errorMessage = null;
+    try {
+      await _dataSource.updateProfile(
+        displayName: displayName,
+        promptPayId: promptPayId,
+        avatarMediaId: avatarMediaId,
+        removeAvatar: removeAvatar,
+      );
+      await _session.refreshUser();
+      return true;
+    } catch (_) {
+      errorMessage = 'บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+      return false;
+    } finally {
+      isSaving = false;
+    }
+  }
+
   @action
   Future<void> signOut() => _session.signOut();
 }

@@ -49,6 +49,11 @@ dependencies:
   intl: ^0.18.1
   logger: ^2.0.2+1
 
+  # Media — receipt / delivery-proof photos (POST /media/upload-sessions) and
+  # the PromptPay QR every payment screen draws.
+  image_picker: ^1.1.2
+  qr_flutter: ^4.1.0
+
 dependency_overrides:
   geolocator_android: 4.5.5
 

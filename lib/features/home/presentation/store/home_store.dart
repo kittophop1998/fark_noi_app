@@ -1,7 +1,9 @@
 import 'package:mobx/mobx.dart';
 
 import '../../../../core/errors/exceptions.dart';
+import '../../domain/entities/home_banner_entity.dart';
 import '../../domain/entities/home_entity.dart';
+import '../../domain/repositories/home_repository.dart';
 import '../../domain/usecases/get_home_data_usecase.dart';
 
 part 'home_store.g.dart';
@@ -10,14 +12,21 @@ class HomeStore = _HomeStore with _$HomeStore;
 
 abstract class _HomeStore with Store {
   final GetHomeDataUseCase _getHomeData;
+  final HomeRepository _repository;
 
-  _HomeStore({required GetHomeDataUseCase getHomeData})
-      : _getHomeData = getHomeData;
+  _HomeStore({
+    required GetHomeDataUseCase getHomeData,
+    required HomeRepository repository,
+  })  : _getHomeData = getHomeData,
+        _repository = repository;
 
   // ─── Observable State ────────────────────────────────
 
   @observable
   ObservableList<HomeEntity> items = ObservableList<HomeEntity>();
+
+  @observable
+  ObservableList<HomeBannerEntity> banners = ObservableList<HomeBannerEntity>();
 
   @observable
   bool isLoading = false;
@@ -56,6 +65,18 @@ abstract class _HomeStore with Store {
       errorMessage = 'โหลดทริปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
     } finally {
       isLoading = false;
+    }
+  }
+
+  /// The carousel, loaded alongside the feed but never blocking it — a banner
+  /// that failed to load is not worth an error screen over the trips beside
+  /// it, so a failure here is silent and just leaves the carousel absent.
+  @action
+  Future<void> loadBanners() async {
+    try {
+      banners = ObservableList.of(await _repository.getBanners());
+    } catch (_) {
+      // Left empty; the section below simply does not draw.
     }
   }
 

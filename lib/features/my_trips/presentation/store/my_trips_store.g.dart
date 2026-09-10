@@ -206,44 +206,70 @@ mixin _$MyTripsStore on _MyTripsStore, Store {
   }
 
   @override
+  Future<bool> purchaseOrder(MyOrderItem order,
+      {required double actualPrice, required List<String> proofMediaIds}) {
+    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
+        name: '_MyTripsStore.purchaseOrder');
+    try {
+      return super.purchaseOrder(order,
+          actualPrice: actualPrice, proofMediaIds: proofMediaIds);
+    } finally {
+      _$_MyTripsStoreActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  Future<bool> startDelivery(String orderId) {
+    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
+        name: '_MyTripsStore.startDelivery');
+    try {
+      return super.startDelivery(orderId);
+    } finally {
+      _$_MyTripsStoreActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  Future<bool> deliverOrder(String orderId,
+      {required List<String> proofMediaIds}) {
+    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
+        name: '_MyTripsStore.deliverOrder');
+    try {
+      return super.deliverOrder(orderId, proofMediaIds: proofMediaIds);
+    } finally {
+      _$_MyTripsStoreActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  Future<bool> cancelOrder(String orderId, {required String reason}) {
+    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
+        name: '_MyTripsStore.cancelOrder');
+    try {
+      return super.cancelOrder(orderId, reason: reason);
+    } finally {
+      _$_MyTripsStoreActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
+  Future<bool> reviewOrder(String orderId,
+      {required int rating, String? comment}) {
+    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
+        name: '_MyTripsStore.reviewOrder');
+    try {
+      return super.reviewOrder(orderId, rating: rating, comment: comment);
+    } finally {
+      _$_MyTripsStoreActionController.endAction(_$actionInfo);
+    }
+  }
+
+  @override
   void markArrivedAtPickup() {
     final _$actionInfo = _$_MyTripsStoreActionController.startAction(
         name: '_MyTripsStore.markArrivedAtPickup');
     try {
       return super.markArrivedAtPickup();
-    } finally {
-      _$_MyTripsStoreActionController.endAction(_$actionInfo);
-    }
-  }
-
-  @override
-  void toggleChecked(MyOrderItem order) {
-    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
-        name: '_MyTripsStore.toggleChecked');
-    try {
-      return super.toggleChecked(order);
-    } finally {
-      _$_MyTripsStoreActionController.endAction(_$actionInfo);
-    }
-  }
-
-  @override
-  void toggleDelivered(MyOrderItem order) {
-    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
-        name: '_MyTripsStore.toggleDelivered');
-    try {
-      return super.toggleDelivered(order);
-    } finally {
-      _$_MyTripsStoreActionController.endAction(_$actionInfo);
-    }
-  }
-
-  @override
-  void setFinalPrice(MyOrderItem order, double price) {
-    final _$actionInfo = _$_MyTripsStoreActionController.startAction(
-        name: '_MyTripsStore.setFinalPrice');
-    try {
-      return super.setFinalPrice(order, price);
     } finally {
       _$_MyTripsStoreActionController.endAction(_$actionInfo);
     }

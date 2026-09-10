@@ -37,6 +37,22 @@ mixin _$HomeStore on _HomeStore, Store {
     });
   }
 
+  late final _$bannersAtom =
+      Atom(name: '_HomeStore.banners', context: context);
+
+  @override
+  ObservableList<HomeBannerEntity> get banners {
+    _$bannersAtom.reportRead();
+    return super.banners;
+  }
+
+  @override
+  set banners(ObservableList<HomeBannerEntity> value) {
+    _$bannersAtom.reportWrite(value, super.banners, () {
+      super.banners = value;
+    });
+  }
+
   late final _$isLoadingAtom =
       Atom(name: '_HomeStore.isLoading', context: context);
 
@@ -78,6 +94,14 @@ mixin _$HomeStore on _HomeStore, Store {
         .run(() => super.fetchHomeData(askForLocation: askForLocation));
   }
 
+  late final _$loadBannersAsyncAction =
+      AsyncAction('_HomeStore.loadBanners', context: context);
+
+  @override
+  Future<void> loadBanners() {
+    return _$loadBannersAsyncAction.run(() => super.loadBanners());
+  }
+
   late final _$_HomeStoreActionController =
       ActionController(name: '_HomeStore', context: context);
 
@@ -96,6 +120,7 @@ mixin _$HomeStore on _HomeStore, Store {
   String toString() {
     return '''
 items: ${items},
+banners: ${banners},
 isLoading: ${isLoading},
 errorMessage: ${errorMessage},
 hasError: ${hasError},

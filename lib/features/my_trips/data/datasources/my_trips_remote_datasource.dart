@@ -83,6 +83,74 @@ class MyTripsRemoteDataSource implements MyTripsDataSource {
     await client.post(ApiEndpoints.orderComplete(orderId));
   }
 
+  @override
+  Future<void> purchaseOrder(
+    String orderId, {
+    required String orderItemId,
+    required double actualPrice,
+    required List<String> proofMediaIds,
+  }) async {
+    await client.post(
+      ApiEndpoints.orderPurchase(orderId),
+      data: {
+        'items': [
+          {
+            'orderItemId': orderItemId,
+            'actualPrice': (actualPrice * 100).round(),
+          },
+        ],
+        'proofMediaIds': proofMediaIds,
+      },
+    );
+  }
+
+  @override
+  Future<void> startDelivery(String orderId) async {
+    await client.post(ApiEndpoints.orderStartDelivery(orderId));
+  }
+
+  @override
+  Future<void> deliverOrder(
+    String orderId, {
+    required List<String> proofMediaIds,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) async {
+    await client.post(
+      ApiEndpoints.orderDelivered(orderId),
+      data: {
+        'proofMediaIds': proofMediaIds,
+        'latitude': latitude,
+        'longitude': longitude,
+        if (accuracy != null) 'accuracy': accuracy,
+      },
+    );
+  }
+
+  @override
+  Future<void> cancelOrder(String orderId, {required String reason}) async {
+    await client.post(
+      ApiEndpoints.orderCancel(orderId),
+      data: {'reason': reason},
+    );
+  }
+
+  @override
+  Future<void> reviewOrder(
+    String orderId, {
+    required int rating,
+    String? comment,
+  }) async {
+    await client.post(
+      ApiEndpoints.orderReview(orderId),
+      data: {
+        'rating': rating,
+        if (comment != null && comment.isNotEmpty) 'comment': comment,
+      },
+    );
+  }
+
   Future<List<Map<String, dynamic>>> _listTrips({
     required String status,
     required int limit,

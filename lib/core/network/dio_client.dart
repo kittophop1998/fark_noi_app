@@ -125,6 +125,29 @@ class DioClient {
   }) =>
       _send(() => _dio.delete<dynamic>(path, data: data, options: options));
 
+  /// One `PUT` of raw bytes to a presigned object-storage URL.
+  ///
+  /// A bare Dio and not [_dio]: the URL is absolute, points off this app's own
+  /// host, and must carry none of this client's bearer token or base path —
+  /// only the signed headers the upload session handed back.
+  Future<void> uploadBytes(
+    String url, {
+    required List<int> bytes,
+    required Map<String, String> headers,
+  }) async {
+    try {
+      await Dio().put<dynamic>(
+        url,
+        data: Stream.fromIterable([bytes]),
+        options: Options(
+          headers: {...headers, Headers.contentLengthHeader: bytes.length},
+        ),
+      );
+    } on DioException catch (e) {
+      throw _toException(e);
+    }
+  }
+
   // ── Envelope ────────────────────────────────────────────────────────────
 
   /// The `data` of a successful envelope, as a map.

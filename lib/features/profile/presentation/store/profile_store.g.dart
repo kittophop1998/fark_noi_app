@@ -80,12 +80,44 @@ mixin _$ProfileStore on _ProfileStore, Store {
     });
   }
 
+  late final _$isSavingAtom =
+      Atom(name: '_ProfileStore.isSaving', context: context);
+
+  @override
+  bool get isSaving {
+    _$isSavingAtom.reportRead();
+    return super.isSaving;
+  }
+
+  @override
+  set isSaving(bool value) {
+    _$isSavingAtom.reportWrite(value, super.isSaving, () {
+      super.isSaving = value;
+    });
+  }
+
   late final _$loadAsyncAction =
       AsyncAction('_ProfileStore.load', context: context);
 
   @override
   Future<void> load() {
     return _$loadAsyncAction.run(() => super.load());
+  }
+
+  late final _$updateProfileAsyncAction =
+      AsyncAction('_ProfileStore.updateProfile', context: context);
+
+  @override
+  Future<bool> updateProfile(
+      {String? displayName,
+      String? promptPayId,
+      String? avatarMediaId,
+      bool? removeAvatar}) {
+    return _$updateProfileAsyncAction.run(() => super.updateProfile(
+        displayName: displayName,
+        promptPayId: promptPayId,
+        avatarMediaId: avatarMediaId,
+        removeAvatar: removeAvatar));
   }
 
   late final _$_ProfileStoreActionController =
@@ -109,6 +141,7 @@ reputation: ${reputation},
 credits: ${credits},
 isLoading: ${isLoading},
 errorMessage: ${errorMessage},
+isSaving: ${isSaving},
 hasError: ${hasError}
     ''';
   }

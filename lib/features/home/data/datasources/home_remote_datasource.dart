@@ -1,5 +1,6 @@
 import '../../../../core/constants/api_endpoints.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../domain/entities/home_banner_entity.dart';
 import '../models/home_model.dart';
 
 abstract class HomeRemoteDataSource {
@@ -9,6 +10,9 @@ abstract class HomeRemoteDataSource {
     required double latitude,
     required double longitude,
   });
+
+  /// `GET /home-banners/active` — the carousel as it should be shown right now.
+  Future<List<HomeBannerEntity>> getBanners();
 }
 
 class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
@@ -34,6 +38,16 @@ class HomeRemoteDataSourceImpl implements HomeRemoteDataSource {
     return DioClient.unwrapList(response)
         .whereType<Map>()
         .map((item) => HomeModel.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  @override
+  Future<List<HomeBannerEntity>> getBanners() async {
+    final response = await client.get(ApiEndpoints.homeBanners);
+    return DioClient.unwrapList(response)
+        .whereType<Map>()
+        .map((item) =>
+            HomeBannerEntity.fromJson(Map<String, dynamic>.from(item)))
         .toList();
   }
 }

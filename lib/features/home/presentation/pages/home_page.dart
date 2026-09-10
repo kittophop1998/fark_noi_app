@@ -40,6 +40,7 @@ class _HomePageState extends State<HomePage> {
     _notifications = sl<NotificationsStore>();
     _session = sl<SessionController>();
     _store.fetchHomeData();
+    _store.loadBanners();
     _myTrips.load();
     _notifications.load();
   }
@@ -49,6 +50,7 @@ class _HomePageState extends State<HomePage> {
     // fresher trips, not for a system prompt over the list it just tugged.
     await Future.wait([
       _store.fetchHomeData(askForLocation: false),
+      _store.loadBanners(),
       _myTrips.load(),
       _notifications.load(),
     ]);
@@ -103,6 +105,7 @@ class _HomePageState extends State<HomePage> {
     }
     return HomeContent(
       items: _store.items,
+      banners: _store.banners,
       activeTrip: _myTrips.trip,
       onRefresh: _refresh,
     );

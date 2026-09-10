@@ -10,15 +10,11 @@ class MyTripsStore = _MyTripsStore with _$MyTripsStore;
 
 /// The runner's own trip, and the milestones along it.
 ///
-/// Two kinds of state live here and they are deliberately different:
-///
-///  * **the trip** is the server's, re-read after every milestone — a
-///    transition can move more than the thing it was called on, so nothing is
-///    patched locally into a shape the server did not confirm;
-///  * **the checklist** ([toggleChecked]) is the runner's own, and has no
-///    server call behind it. Ticking "ซื้อแล้ว" while standing in a shop is a
-///    note to oneself; the errand's real `PURCHASED` milestone needs a receipt
-///    photograph, which is a different action with a different consequence.
+/// The trip and its orders are always the server's, re-read after every
+/// milestone — a transition can move more than the thing it was called on, so
+/// nothing is patched locally into a shape the server did not confirm. The
+/// one exception is [markArrivedAtPickup]: the API has no trip-level "back at
+/// the meeting point" state, so that one moment is recorded here alone.
 abstract class _MyTripsStore with Store {
   _MyTripsStore({
     required GetActiveTripUseCase getActiveTrip,
@@ -123,6 +119,49 @@ abstract class _MyTripsStore with Store {
   Future<bool> completeOrder(String orderId) =>
       _act((_) => _actions.completeOrder(orderId));
 
+  @action
+  Future<bool> purchaseOrder(
+    MyOrderItem order, {
+    required double actualPrice,
+    required List<String> proofMediaIds,
+  }) =>
+      _act((_) => _actions.purchaseOrder(
+            order.id,
+            orderItemId: order.orderItemId,
+            actualPrice: actualPrice,
+            proofMediaIds: proofMediaIds,
+          ));
+
+  @action
+  Future<bool> startDelivery(String orderId) =>
+      _act((_) => _actions.startDelivery(orderId));
+
+  @action
+  Future<bool> deliverOrder(
+    String orderId, {
+    required List<String> proofMediaIds,
+  }) =>
+      _act((_) => _actions.deliverOrder(
+            orderId,
+            proofMediaIds: proofMediaIds,
+          ));
+
+  @action
+  Future<bool> cancelOrder(String orderId, {required String reason}) =>
+      _act((_) => _actions.cancelOrder(orderId, reason: reason));
+
+  @action
+  Future<bool> reviewOrder(
+    String orderId, {
+    required int rating,
+    String? comment,
+  }) =>
+      _act((_) => _actions.reviewOrder(
+            orderId,
+            rating: rating,
+            comment: comment,
+          ));
+
   /// "ถึงจุดนัดรับแล้ว" — the app's own milestone, and the one the runner
   /// announces to everybody waiting. The server has no trip-level state for it
   /// (see [TripStatus.delivering]), so it is recorded here.
@@ -136,36 +175,10 @@ abstract class _MyTripsStore with Store {
     );
   }
 
-  // ─── The runner's own checklist ──────────────────────
-
-  @action
-  void toggleChecked(MyOrderItem order) {
-    _replace(order, order.copyWith(isChecked: !order.isChecked));
-  }
-
-  @action
-  void toggleDelivered(MyOrderItem order) {
-    _replace(order, order.copyWith(isDelivered: !order.isDelivered));
-  }
-
-  @action
-  void setFinalPrice(MyOrderItem order, double price) {
-    _replace(order, order.copyWith(finalPrice: price));
-  }
-
   @action
   void clearError() => errorMessage = null;
 
   // ─── Plumbing ────────────────────────────────────────
-
-  void _replace(MyOrderItem order, MyOrderItem updated) {
-    final current = trip;
-    if (current == null) return;
-    final index = current.orders.indexWhere((o) => o.id == order.id);
-    if (index < 0) return;
-    final orders = [...current.orders]..[index] = updated;
-    trip = current.copyWith(orders: orders);
-  }
 
   Future<bool> _act(Future<void> Function(String tripId) body) async {
     final id = trip?.id;

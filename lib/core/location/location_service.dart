@@ -34,13 +34,32 @@ class LocationService {
   /// Never throws. [ask] is false on a refresh, where a permission dialog
   /// popping up over a list the user pulled is the wrong moment for it.
   Future<LatLng> current({bool ask = true}) async {
-    final fix = await _resolve(ask: ask);
+    final fix = await _resolve(ask: ask, accuracy: LocationAccuracy.medium);
     _lastKnown = fix ?? _lastKnown ?? fallback;
     _lastWasPrecise = fix != null;
     return _lastKnown!;
   }
 
-  Future<LatLng?> _resolve({required bool ask}) async {
+  /// The device's own best fix, for the two calls the server actually checks
+  /// a distance against — `start-purchasing` and `delivered` refuse outside a
+  /// ~10 m radius (`TOO_FAR_FROM_STORE` / `TOO_FAR_FROM_DELIVERY_POINT`), which
+  /// the feed's `medium` accuracy cannot reliably land inside.
+  ///
+  /// Returns null rather than a fallback: a milestone recorded from the
+  /// campus coordinate because the device would not lock is a false claim
+  /// about where the runner is, and the caller should refuse the action
+  /// instead of sending it.
+  Future<LatLng?> currentPrecise({bool ask = true}) => _resolve(
+        ask: ask,
+        accuracy: LocationAccuracy.best,
+        timeout: AppConstants.preciseLocationTimeout,
+      );
+
+  Future<LatLng?> _resolve({
+    required bool ask,
+    required LocationAccuracy accuracy,
+    Duration timeout = AppConstants.locationTimeout,
+  }) async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return null;
 
@@ -53,15 +72,17 @@ class LocationService {
         return null;
       }
 
-      // `medium` rather than `best`: the feed is a 7 km circle, so metres of
-      // accuracy buy nothing and cost a much longer lock.
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: AppConstants.locationTimeout,
+        locationSettings: LocationSettings(
+          accuracy: accuracy,
+          timeLimit: timeout,
         ),
       );
-      return LatLng(position.latitude, position.longitude);
+      return LatLng(
+        position.latitude,
+        position.longitude,
+        accuracy: position.accuracy,
+      );
     } catch (_) {
       // Includes the timeout, a platform channel that is not there, and a
       // permission the OS revoked between the check and the call. All of them
@@ -73,10 +94,14 @@ class LocationService {
 
 /// A coordinate pair. Small enough to live beside the service that produces it.
 class LatLng {
-  const LatLng(this.latitude, this.longitude);
+  const LatLng(this.latitude, this.longitude, {this.accuracy});
 
   final double latitude;
   final double longitude;
+
+  /// The device's own error bar in metres, when the platform reports one —
+  /// `ArrivalLocation.accuracy` on the wire.
+  final double? accuracy;
 
   @override
   String toString() => '$latitude,$longitude';

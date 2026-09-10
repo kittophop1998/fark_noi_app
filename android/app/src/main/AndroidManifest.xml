@@ -6,6 +6,14 @@
          product needs. A refusal is not fatal: LocationService falls back to
          the campus coordinate. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Arrival checks are strict: `start-purchasing` and `delivered` refuse
+         the call outside a ~10 m radius of the order's own coordinate
+         (TOO_FAR_FROM_STORE / TOO_FAR_FROM_DELIVERY_POINT), which a coarse fix
+         cannot reliably land inside. Declaring FINE alongside COARSE is what
+         lets Android's own permission sheet offer "precise" at all — without
+         it the OS never presents that choice. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="fark_noi"

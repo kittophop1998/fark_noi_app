@@ -27,4 +27,29 @@ abstract class MyTripsRepository {
     double? longitude,
   });
   Future<void> completeOrder(String orderId);
+
+  Future<void> purchaseOrder(
+    String orderId, {
+    required String orderItemId,
+    required double actualPrice,
+    required List<String> proofMediaIds,
+  });
+
+  Future<void> startDelivery(String orderId);
+
+  Future<void> deliverOrder(
+    String orderId, {
+    required List<String> proofMediaIds,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  });
+
+  Future<void> cancelOrder(String orderId, {required String reason});
+
+  Future<void> reviewOrder(
+    String orderId, {
+    required int rating,
+    String? comment,
+  });
 }

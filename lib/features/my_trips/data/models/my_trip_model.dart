@@ -51,13 +51,22 @@ class MyTripModel {
 
     final buyerName = (requester['displayName'] as String?)?.trim() ?? '';
     final status = json['status'] as String? ?? 'ACCEPTED';
+    final payment = _map(json['payment']);
 
     return MyOrderItem(
       id: json['id']?.toString() ?? '',
+      buyerId: requester['id']?.toString() ?? '',
       buyerName: buyerName.isEmpty ? 'ผู้ฝาก' : buyerName,
       buyerInitial: buyerName.isEmpty
           ? '?'
           : String.fromCharCode(buyerName.runes.first),
+      // An open-request order (`productDescription`, no `items[]` row from the
+      // client) still reads back as one purchasable thing — its own id is the
+      // only row `purchase` can name, so it stands in for the missing item id
+      // rather than sending the server an empty `objectid`.
+      orderItemId: items.isNotEmpty
+          ? items.first['id']?.toString() ?? ''
+          : json['id']?.toString() ?? '',
       buyerPhone: (json['requesterPhone'] as String?)?.isNotEmpty == true
           ? json['requesterPhone'] as String
           : null,
@@ -78,6 +87,7 @@ class MyTripModel {
       isChecked: _isAtLeast(status, 'PURCHASED'),
       isDelivered: _isAtLeast(status, 'DELIVERED'),
       finalPrice: _bahtOrNull(json['itemTotalAmount']),
+      paymentAmount: _bahtOrNull(payment['amount']),
     );
   }
 

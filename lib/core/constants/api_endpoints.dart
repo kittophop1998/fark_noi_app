@@ -50,9 +50,23 @@ class ApiEndpoints {
   static String orderDelivered(String id) => '/orders/$id/delivered';
   static String orderComplete(String id) => '/orders/$id/complete';
   static String orderCancel(String id) => '/orders/$id/cancel';
+  static String orderReview(String id) => '/orders/$id/review';
+  static String orderReviews(String id) => '/orders/$id/reviews';
+
+  // ── Media ─────────────────────────────────────────────────────────────
+  static const mediaUploadSessions = '/media/upload-sessions';
+  static String mediaComplete(String id) => '/media/$id/complete';
+  static String mediaViewUrl(String id) => '/media/$id/view-url';
+
+  // ── Reviews / Reputation ─────────────────────────────────────────────
+  static String userReviews(String userId) => '/users/$userId/reviews';
+  static String userReputation(String userId) => '/users/$userId/reputation';
 
   // ── Catalogue ─────────────────────────────────────────────────────────
   static const stores = '/stores';
   static const appSettings = '/app-settings';
   static const homeBanners = '/home-banners/active';
+
+  // ── Trips ─────────────────────────────────────────────────────────────
+  static String tripPricing(String id) => '/trips/$id/pricing';
 }

@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>ฝากหน่อยใช้ตำแหน่งของคุณเพื่อแสดงทริปที่อยู่ใกล้ และยืนยันว่าคุณถึงร้านค้าหรือจุดนัดรับแล้วจริง</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ฝากหน่อยใช้กล้องเพื่อถ่ายรูปใบเสร็จและรูปตอนส่งของ เป็นหลักฐานยืนยันการซื้อและการส่งมอบ</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ฝากหน่อยใช้คลังรูปภาพเพื่อแนบรูปใบเสร็จหรือรูปสินค้าประกอบออเดอร์</string>
 </dict>
 </plist>

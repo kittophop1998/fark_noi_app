@@ -10,6 +10,8 @@ import '../../../my_trips/domain/entities/my_trip_entity.dart';
 import '../../../my_trips/presentation/store/my_trips_store.dart';
 import '../../domain/entities/reputation_entity.dart';
 import '../store/profile_store.dart';
+import '../widgets/profile_sheets.dart';
+import 'reviews_page.dart';
 
 // ─── Color shortcuts (all from AppColors) ──────────────
 const _kPrimary       = AppColors.primary;
@@ -64,6 +66,47 @@ class _ProfilePageState extends State<ProfilePage> {
     await _store.signOut();
   }
 
+  void _editProfile() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EditProfileSheet(
+        store: _store,
+        currentName: _store.user?.displayName ?? '',
+      ),
+    );
+  }
+
+  void _editPromptPay() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PromptPayEditSheet(
+        store: _store,
+        current: _store.user?.promptPayId,
+      ),
+    );
+  }
+
+  void _openCredits() {
+    final credits = _store.credits;
+    if (credits == null) return;
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => CreditsDetailSheet(credits: credits),
+    );
+  }
+
+  void _openReviews() {
+    final userId = _store.user?.id;
+    if (userId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ReviewsPage(userId: userId)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Observer(builder: (_) => _build(context));
@@ -98,12 +141,9 @@ class _ProfilePageState extends State<ProfilePage> {
             user: user,
             reputation: reputation,
             tripCount: reputation?.completedTotal ?? 0,
+            onEdit: _editProfile,
           ),
           const SizedBox(height: 16),
-
-          // ── Badges ────────────────────────────────────
-          _BadgesRow(),
-          const SizedBox(height: 20),
 
           // ── My Active Trip Section ─────────────────────
           _SectionLabel(label: 'งานของฉัน', icon: Icons.work_outline_rounded),
@@ -151,17 +191,20 @@ class _ProfilePageState extends State<ProfilePage> {
               // Absent means they have not set one, and no payment QR can be
               // drawn for the errands they run — so the row says exactly that
               // rather than showing a blank.
-              subtitle: user?.promptPayId ?? 'ยังไม่ได้ตั้งค่า'),
+              subtitle: user?.promptPayId ?? 'ยังไม่ได้ตั้งค่า',
+              onTap: _editPromptPay),
           _MenuItem(
               icon: Icons.star_outline_rounded,
               label: 'รีวิวที่ได้รับ',
-              subtitle: _ratingLine(reputation)),
+              subtitle: _ratingLine(reputation),
+              onTap: _openReviews),
           _MenuItem(
               icon: Icons.account_balance_wallet_outlined,
               label: 'เครดิตของฉัน',
               subtitle: _store.credits == null
                   ? '—'
-                  : '฿${_store.credits!.depositBalance.toStringAsFixed(0)}'),
+                  : '฿${_store.credits!.depositBalance.toStringAsFixed(0)}',
+              onTap: _openCredits),
           _MenuItem(
               icon: Icons.logout_rounded,
               label: 'ออกจากระบบ',
@@ -238,11 +281,13 @@ class _ProfileCard extends StatelessWidget {
     required this.user,
     required this.reputation,
     required this.tripCount,
+    required this.onEdit,
   });
 
   final AuthUser? user;
   final ReputationEntity? reputation;
   final int tripCount;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -338,7 +383,7 @@ class _ProfileCard extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.edit_outlined,
                 color: _kTextSecondary, size: 20),
-            onPressed: () {},
+            onPressed: onEdit,
           ),
         ],
       ),
@@ -377,66 +422,6 @@ class _StatChip extends StatelessWidget {
       ),
     );
   }
-}
-
-// ─── Badges Row ───────────────────────────────────────────
-
-class _BadgesRow extends StatelessWidget {
-  final _badges = const [
-    _Badge(emoji: '⚡', label: 'High Speed', desc: 'ส่งเร็ว ×3'),
-    _Badge(emoji: '🛒', label: 'ครบถ้วน', desc: 'ซื้อครบ 100%'),
-    _Badge(emoji: '⭐', label: 'ท็อปเรท', desc: '4.9 ดาว'),
-    _Badge(emoji: '🔥', label: '5 ทริป', desc: 'สะสม 5 งาน'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 88,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _badges.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (_, i) {
-          final b = _badges[i];
-          return Container(
-            width: 80,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _kBorder),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(b.emoji,
-                    style: const TextStyle(fontSize: 22)),
-                const SizedBox(height: 4),
-                Text(b.label,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: _kTextPrimary,
-                    )),
-                Text(b.desc,
-                    style: const TextStyle(
-                        fontSize: 9, color: _kTextSecondary)),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _Badge {
-  final String emoji;
-  final String label;
-  final String desc;
-  const _Badge(
-      {required this.emoji, required this.label, required this.desc});
 }
 
 // ─── Section Label ────────────────────────────────────────
@@ -668,13 +653,6 @@ class _HistoryCard extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.star_rounded, color: AppColors.rating, size: 14),
-          const SizedBox(width: 2),
-          const Text('5.0',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _kTextPrimary)),
         ],
       ),
     );

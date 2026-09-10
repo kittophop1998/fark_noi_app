@@ -24,8 +24,16 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.example.fark_noi"
-    compileSdkVersion 34
-    ndkVersion flutter.ndkVersion
+    // 35, not 34: flutter_plugin_android_lifecycle (pulled in transitively by
+    // image_picker) compiles against 35. compileSdk is backward compatible,
+    // so this does not change what devices the app installs on — that is
+    // targetSdkVersion below, left at 34.
+    compileSdkVersion 35
+    // Pinned rather than `flutter.ndkVersion`: image_picker, geolocator,
+    // flutter_secure_storage, path_provider and shared_preferences all
+    // require 25.1.8937393, newer than the tool's own default on this
+    // project's Flutter version.
+    ndkVersion "25.1.8937393"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

@@ -12,7 +12,9 @@ import '../../../../shared/widgets/app_page.dart';
 import '../../../../shared/widgets/app_section.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../my_trips/domain/entities/my_trip_entity.dart';
+import '../../domain/entities/home_banner_entity.dart';
 import '../../domain/entities/home_entity.dart';
+import 'home_banner_carousel.dart';
 import 'trip_card.dart';
 
 /// The categories a feed can be narrowed to.
@@ -41,11 +43,13 @@ class HomeContent extends StatefulWidget {
   const HomeContent({
     super.key,
     required this.items,
+    this.banners = const [],
     this.activeTrip,
     this.onRefresh,
   });
 
   final List<HomeEntity> items;
+  final List<HomeBannerEntity> banners;
 
   /// The reader's own open trip, if they are running one. It sits at the top of
   /// the page rather than in the header band: it is the screen's content, and a
@@ -83,6 +87,14 @@ class _HomeContentState extends State<HomeContent> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.pageX),
             child: _ActiveTripCard(trip: activeTrip),
+          ),
+          const SizedBox(height: AppSpace.sectionGap),
+        ],
+
+        if (widget.banners.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.pageX),
+            child: HomeBannerCarousel(banners: widget.banners),
           ),
           const SizedBox(height: AppSpace.sectionGap),
         ],

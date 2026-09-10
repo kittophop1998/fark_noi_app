@@ -6,6 +6,7 @@ import '../local_storage/token_storage.dart';
 import '../location/location_service.dart';
 import '../network/dio_client.dart';
 import '../session/session_controller.dart';
+import '../../shared/services/media_upload_service.dart';
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 import '../../features/auth/data/datasources/auth_remote_datasource.dart';
@@ -68,6 +69,7 @@ Future<void> init() async {
       onSessionExpired: () => sl<SessionController>().expire(),
     ),
   );
+  sl.registerLazySingleton(() => MediaUploadService(client: sl()));
 
   // ─── Data Sources ─────────────────────────────────────
   sl.registerLazySingleton<AuthRemoteDataSource>(
@@ -130,7 +132,7 @@ Future<void> init() async {
   // Factories, so a screen opened twice does not inherit the first visit's
   // form state — except the ones whose state *is* shared, and there are none.
   sl.registerFactory(() => AuthStore(repository: sl(), session: sl()));
-  sl.registerFactory(() => HomeStore(getHomeData: sl()));
+  sl.registerFactory(() => HomeStore(getHomeData: sl(), repository: sl()));
   sl.registerFactory(
     () => PostTripStore(
       createPostTrip: sl(),

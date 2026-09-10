@@ -87,8 +87,14 @@ extension OutOfStockLabel on OutOfStockPreference {
 /// ออเดอร์ 1 รายการจากคนฝาก 1 คน
 class MyOrderItem extends Equatable {
   final String id;
+  final String buyerId;         // ผู้ฝากคนนี้ — reviewee ของรีวิวที่รันเนอร์ให้
   final String buyerName;       // ชื่อคนฝาก
   final String buyerInitial;    // อักษรย่อ
+
+  /// The single line item's own id — every order this app creates carries
+  /// exactly one. `PurchaseOrderRequest.items[].orderItemId` needs it; empty
+  /// for an order read before this field existed on the client.
+  final String orderItemId;
   final String itemDescription; // รายการสินค้า เช่น "ข้าวมันไก่ + ไข่ดาว"
   final double? estimatedPrice; // ราคาประเมิน
   final OutOfStockPreference outOfStockPref;
@@ -118,10 +124,22 @@ class MyOrderItem extends Equatable {
   /// and only once delivery has arrived. Null everywhere else.
   final String? buyerPhone;
 
+  /// Present only while DELIVERED and the runner has a payment account —
+  /// `OrderPayment` on the wire. Its presence is the server's own "ask for the
+  /// money now" signal, which is what draws the receiving QR on this order.
+  final double? paymentAmount;
+
+  /// Whether the caller has already rated this errand — `OrderReviews.mine`
+  /// read back onto the row, so a completed order that was already reviewed
+  /// does not offer the form a second time.
+  final bool alreadyReviewed;
+
   const MyOrderItem({
     required this.id,
+    this.buyerId = '',
     required this.buyerName,
     required this.buyerInitial,
+    this.orderItemId = '',
     required this.itemDescription,
     this.estimatedPrice,
     this.outOfStockPref = OutOfStockPreference.substitute,
@@ -133,6 +151,8 @@ class MyOrderItem extends Equatable {
     this.rewardAmount = 0,
     this.maxItemBudget = 0,
     this.buyerPhone,
+    this.paymentAmount,
+    this.alreadyReviewed = false,
   });
 
   /// A request the runner has not answered yet. It holds no seat until they do.
@@ -142,16 +162,33 @@ class MyOrderItem extends Equatable {
   bool get isClosed =>
       status == 'REJECTED' || status == 'CANCELLED' || status == 'EXPIRED';
 
+  /// The runner has said "ถึงร้านแล้ว" and may now record what they bought.
+  bool get isPurchasing => status == 'PURCHASING';
+
+  /// Bought, and ready for "ออกส่ง".
+  bool get isPurchased => status == 'PURCHASED';
+
+  /// Out for handover.
+  bool get isOutForDelivery => status == 'DELIVERING';
+
+  /// Handed over; the money is still owed.
+  bool get isAwaitingPayment => status == 'DELIVERED';
+
+  bool get isCompleted => status == 'COMPLETED';
+
   MyOrderItem copyWith({
     bool? isChecked,
     bool? isDelivered,
     double? finalPrice,
     String? status,
+    bool? alreadyReviewed,
   }) {
     return MyOrderItem(
       id: id,
+      buyerId: buyerId,
       buyerName: buyerName,
       buyerInitial: buyerInitial,
+      orderItemId: orderItemId,
       itemDescription: itemDescription,
       estimatedPrice: estimatedPrice,
       outOfStockPref: outOfStockPref,
@@ -163,14 +200,18 @@ class MyOrderItem extends Equatable {
       rewardAmount: rewardAmount,
       maxItemBudget: maxItemBudget,
       buyerPhone: buyerPhone,
+      paymentAmount: paymentAmount,
+      alreadyReviewed: alreadyReviewed ?? this.alreadyReviewed,
     );
   }
 
   @override
   List<Object?> get props => [
         id,
+        buyerId,
         buyerName,
         buyerInitial,
+        orderItemId,
         itemDescription,
         estimatedPrice,
         outOfStockPref,
@@ -182,6 +223,8 @@ class MyOrderItem extends Equatable {
         rewardAmount,
         maxItemBudget,
         buyerPhone,
+        paymentAmount,
+        alreadyReviewed,
       ];
 }
 
@@ -222,14 +265,25 @@ class MyTripEntity extends Equatable {
   bool get isFinished =>
       status == TripStatus.completed || status == TripStatus.cancelled;
 
-  int get filledSlots => orders.length;
+  /// Orders that still occupy a seat — everything except the ones that were
+  /// refused, called off, or timed out. A rejected request frees the slot it
+  /// never should have kept.
+  int get filledSlots => orders.where((o) => !o.isClosed).length;
   int get availableSlots => totalSlots - filledSlots;
   bool get isFull => availableSlots <= 0;
-  int get checkedCount => orders.where((o) => o.isChecked).length;
-  int get deliveredCount => orders.where((o) => o.isDelivered).length;
-  bool get allChecked => orders.isNotEmpty && orders.every((o) => o.isChecked);
+
+  /// Accepted errands the runner is actually on the hook for — a pending
+  /// request has not been taken on yet, and a closed one never will be, so
+  /// neither belongs in a denominator about shopping progress.
+  List<MyOrderItem> get activeOrders =>
+      orders.where((o) => !o.isPending && !o.isClosed).toList();
+
+  int get checkedCount => activeOrders.where((o) => o.isChecked).length;
+  int get deliveredCount => activeOrders.where((o) => o.isDelivered).length;
+  bool get allChecked =>
+      activeOrders.isNotEmpty && activeOrders.every((o) => o.isChecked);
   bool get allDelivered =>
-      orders.isNotEmpty && orders.every((o) => o.isDelivered);
+      activeOrders.isNotEmpty && activeOrders.every((o) => o.isDelivered);
 
   MyTripEntity copyWith({
     TripStatus? status,

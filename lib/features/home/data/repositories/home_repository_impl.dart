@@ -1,3 +1,4 @@
+import '../../domain/entities/home_banner_entity.dart';
 import '../../domain/entities/home_entity.dart';
 import '../../domain/repositories/home_repository.dart';
 import '../datasources/home_remote_datasource.dart';
@@ -17,4 +18,8 @@ class HomeRepositoryImpl implements HomeRepository {
       longitude: longitude,
     );
   }
+
+  @override
+  Future<List<HomeBannerEntity>> getBanners() =>
+      remoteDataSource.getBanners();
 }

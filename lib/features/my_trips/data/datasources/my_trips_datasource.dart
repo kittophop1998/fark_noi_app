@@ -36,4 +36,38 @@ abstract class MyTripsDataSource {
 
   /// `POST /orders/{id}/complete` — the errand is settled.
   Future<void> completeOrder(String orderId);
+
+  /// `POST /orders/{id}/purchase` — records what was actually bought and its
+  /// real price, backed by the runner's own receipt photographs.
+  /// `PURCHASING` -> `PURCHASED`.
+  Future<void> purchaseOrder(
+    String orderId, {
+    required String orderItemId,
+    required double actualPrice,
+    required List<String> proofMediaIds,
+  });
+
+  /// `POST /orders/{id}/start-delivery` — `PURCHASED` -> `DELIVERING`.
+  Future<void> startDelivery(String orderId);
+
+  /// `POST /orders/{id}/delivered` — the handover, evidenced by photographs
+  /// and gated on the runner's own coordinate. `DELIVERING` -> `DELIVERED`.
+  Future<void> deliverOrder(
+    String orderId, {
+    required List<String> proofMediaIds,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  });
+
+  /// `POST /orders/{id}/cancel`. A reason is required by the API.
+  Future<void> cancelOrder(String orderId, {required String reason});
+
+  /// `POST /orders/{id}/review` — the runner's own rating of the requester,
+  /// once the errand is `COMPLETED`.
+  Future<void> reviewOrder(
+    String orderId, {
+    required int rating,
+    String? comment,
+  });
 }

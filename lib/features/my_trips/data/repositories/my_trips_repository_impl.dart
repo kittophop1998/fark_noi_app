@@ -45,4 +45,50 @@ class MyTripsRepositoryImpl implements MyTripsRepository {
   @override
   Future<void> completeOrder(String orderId) =>
       dataSource.completeOrder(orderId);
+
+  @override
+  Future<void> purchaseOrder(
+    String orderId, {
+    required String orderItemId,
+    required double actualPrice,
+    required List<String> proofMediaIds,
+  }) =>
+      dataSource.purchaseOrder(
+        orderId,
+        orderItemId: orderItemId,
+        actualPrice: actualPrice,
+        proofMediaIds: proofMediaIds,
+      );
+
+  @override
+  Future<void> startDelivery(String orderId) =>
+      dataSource.startDelivery(orderId);
+
+  @override
+  Future<void> deliverOrder(
+    String orderId, {
+    required List<String> proofMediaIds,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) =>
+      dataSource.deliverOrder(
+        orderId,
+        proofMediaIds: proofMediaIds,
+        latitude: latitude,
+        longitude: longitude,
+        accuracy: accuracy,
+      );
+
+  @override
+  Future<void> cancelOrder(String orderId, {required String reason}) =>
+      dataSource.cancelOrder(orderId, reason: reason);
+
+  @override
+  Future<void> reviewOrder(
+    String orderId, {
+    required int rating,
+    String? comment,
+  }) =>
+      dataSource.reviewOrder(orderId, rating: rating, comment: comment);
 }
